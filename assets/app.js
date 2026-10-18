@@ -17,7 +17,7 @@ const FILTROS = [['recorte','Recorte'],['uf','UF'],['grp','Grp. Econômico'],['e
                  ['fonte','Fonte'],['janela','Comparabilidade'],['marca','Marca'],['segmento','Segmento']];
 const PAGES = [
   ['inicio','Início'], ['geral','Dados gerais'], ['veja','Veja'], ['vanish','Vanish'], ['harpic','Harpic'], ['finish','Finish'],
-  ['hn','H&N'], ['diretor','Visão do Diretor'], ['confronto','Confronto de fontes'], ['depara','De-para'], ['base','Base geral']];
+  ['hn','H&N'], ['diretor','Visão do Diretor'], ['redes-scan','Redes Scanntech'], ['redes-col','Redes Colecta'], ['confronto','Confronto de fontes'], ['depara','De-para'], ['base','Base geral']];
 const MARCA_PAG = {veja: ['VEJA'], vanish: ['VANISH'], harpic: ['HARPIC'], finish: ['FINISH']};
 const HN = [['SUSTAGEN', ['SUSTAGEN']], ['BEM ESTAR SEXUAL (JONTEX + OLLA)', ['JONTEX','OLLA']], ['VEET', ['VEET']]];
 
@@ -140,9 +140,9 @@ function larguraCard() {
   const app = document.getElementById('app'), w = app ? app.clientWidth : 1000;
   return w - (innerWidth < 640 ? 80 : 100);   // padding do main + padding do card
 }
-function chart(a, med, alto = 250, larg = null, rotulos = true) {
+function chart(a, med, alto = 250, larg = null, rotulos = true, opc = {}) {
   const W = Math.round(Math.max(240, Math.min(1180, larg || larguraCard()))), H = alto, pt = 26, gw = W / 12, bw = gw * 0.3;
-  const comValor = rotulos && gw >= 46, comVar = rotulos && gw >= 50;
+  const comValor = rotulos && gw >= 46, comVar = rotulos && !opc.semVar && gw >= 50;
   const pb = comVar ? 50 : 28;
   let mx = 0; for (let m = 1; m <= 12; m++) for (const y of [2025, 2026]) { const x = v(a, y, m); if (x > mx) mx = x; }
   if (!mx) return '<div class="empty">Sem dado para este recorte.</div>';
@@ -154,9 +154,10 @@ function chart(a, med, alto = 250, larg = null, rotulos = true) {
     if (h26) s += `<rect x="${x0 + 2}" y="${H - pb - h26}" width="${bw}" height="${h26}" rx="4" fill="#FF007F"/>`;
     if (h26 && comValor) s += `<text class="vl" x="${x0 + 2 + bw / 2}" y="${H - pb - h26 - 7}" text-anchor="middle" font-size="12" font-weight="600" fill="#1D1D1F">${curto(a26)}</text>`;
     s += `<text x="${x0}" y="${H - (comVar ? 30 : 8)}" text-anchor="middle" font-size="11" fill="#6E6E73">${gw >= 34 ? MESES[m - 1] : MESES[m - 1][0]}</text>`;
-    const vm = varr(a26, a25);
+    const vm = (opc.fv || varr)(a26, a25);
     if (comVar && isFinite(vm)) s += `<text x="${x0}" y="${H - 8}" text-anchor="middle" font-size="12.5" font-weight="700" fill="${vm > 0.0005 ? '#1D7A34' : vm < -0.0005 ? '#D70015' : '#6E6E73'}">${pc(vm)}</text>`;
-    const t = `<b>${MESES[m - 1]}</b> · 2025: ${med === 'rs' ? 'R$ ' : ''}${n0(a25) || 'sem dado'} · 2026: ${med === 'rs' ? 'R$ ' : ''}${n0(a26) || 'sem dado'} ${isFinite(varr(a26, a25)) ? '· ' + pc(varr(a26, a25)) : ''}`;
+    const vt = opc.semVar ? NaN : (opc.fv || varr)(a26, a25);
+    const t = `<b>${MESES[m - 1]}</b> · 2025: ${med === 'rs' ? 'R$ ' : ''}${n0(a25) || 'sem dado'} · 2026: ${med === 'rs' ? 'R$ ' : ''}${n0(a26) || 'sem dado'} ${isFinite(vt) ? '· ' + pc(vt) : ''}`;
     s += `<rect x="${(m - 1) * gw}" y="0" width="${gw}" height="${H}" fill="transparent" data-tip="${esc(t)}"/>`;
   }
   return s + '</svg><div class="legend"><span><i style="background:#D2D2D7"></i>2025</span><span><i style="background:#FF007F"></i>2026 até ' + mes(S.corte) + '</span></div>';
@@ -297,7 +298,10 @@ document.addEventListener('click', e => {
   if (act === 'pop') { if (POP && POP.k === t.dataset.k) fecharPop(); else abrirPop(t.dataset.k, t); }
   else if (act === 'limpar') { FILTROS.forEach(([k]) => S.f[k].clear()); atualizar(); }
   else if (act === 'med') { S.ui['m' + t.dataset.bid] = t.dataset.m; document.getElementById('b-' + t.dataset.bid).innerHTML = blocoIn(t.dataset.bid); }
-  else if (act === 'ui') { S.ui[t.dataset.k] = t.dataset.v; if (t.dataset.k === 'bnv') S.ui.pag = 0; render(false); }
+  else if (act === 'ui') {
+    S.ui[t.dataset.k] = t.dataset.v; if (t.dataset.k === 'bnv') S.ui.pag = 0; render(false);
+    if ((t.dataset.k === 'scsel' || t.dataset.k === 'clsel') && t.dataset.v) { const d = document.querySelector('#app .det'); if (d) scrollTo({top: d.getBoundingClientRect().top + scrollY - 120}); }
+  }
   else if (act === 'pg') { e.preventDefault(); irPara(t.dataset.pg); }
   else if (act === 'csv') baixarCSV(t);
   else if (act === 'sair') { e.preventDefault(); try { localStorage.removeItem('dash-geral-cto-chave'); } catch (x) { /* nada guardado */ } location.replace(location.pathname); }
@@ -372,6 +376,8 @@ function pgInicio() {
     ['finish','Finish','Visão marca e segmentos: Pó, Secante e Tabletes.'],
     ['hn','H&N','Health & Nutrition: Sustagen, Bem Estar Sexual (Jontex + Olla) e Veet.'],
     ['diretor','Visão do Diretor','Distribuidor x marca x ano, no acumulado.'],
+    ['redes-scan','Redes Scanntech','Redes de varejo: Reckitt, mercado e share por rede e UF, quem cresce e quem cai, mês a mês.'],
+    ['redes-col','Redes Colecta','Redes que compram dos distribuidores, por executivo, UF e distribuidor, cruzadas com a Scanntech.'],
     ['confronto','Confronto de fontes','MTRIX x Colecta nos mesmos meses, distribuidor, marca e segmento.'],
     ['depara','De-para','Hierarquia, fonte por período e a régua única de segmentos.'],
     ['base','Base geral','A base longa que alimenta tudo, filtrada pelas segmentações, com download em CSV.']];
@@ -534,6 +540,275 @@ function pgConfronto() {
     <div id="conf-res">${confRes()}</div>`;
 }
 
+/* ---------- Redes: Scanntech (varejo) e Colecta (clientes dos distribuidores) ---------- */
+const RD = D.redes || null;
+let RD_ULT = null;
+if (RD && RD.scanm) Object.keys(RD.scanm).forEach(k => { RD.scanm[k] = RD.scanm[k].filter(l => l[0] !== 'Tudo' && l[1] !== 'Tudo'); });   // 'Tudo' = total do Tableau
+const BASE_COMP = new Set(RD && RD.base_comp ? RD.base_comp : ['DAC DISTRIBUIDORA', 'RIO VERMELHO', 'A.S.E. - ANAPOLIS GO', 'COMERCIAL ALVORADA']);
+const RM = RD ? RD.meses : [];
+const nomeRaiz = r => { if (r === 'DEMAIS') return 'Demais clientes'; if (r === 'PF') return 'Pessoa física e sem CNPJ'; const n = RD.nomes[r] || {}; return (n.fantasia || n.razao || 'CNPJ ' + r); };
+const mesesAte = (ano, n) => ate(n).map(m => RM.indexOf(`${ano}${String(m).padStart(2, '0')}`)).filter(i => i >= 0);
+const varR = (a, b) => (isFinite(a) && isFinite(b) && b >= 1000 && a > 0 && a / b <= 10 ? a / b - 1 : NaN);   // evita % absurdo sobre base mínima
+const rsx = v => (Math.abs(v) >= 1e6 ? mi(v) : 'R$ ' + n0(v));   // R$ Mi só a partir de 1 milhão
+const varQ = (a, b) => (isFinite(b) && b >= 1000 && !(a > 0) ? -1 : varR(a, b));   // base relevante e zero agora = parou de vender (-100%)
+function parR(arr, ref) {   // soma 26 e 25 só nos meses até o corte com valor nos dois anos (ref decide o pareamento)
+  ref = ref || arr; let a = 0, b = 0;
+  for (let m = 1; m <= S.corte; m++) { const i5 = RM.indexOf(`2025${String(m).padStart(2, '0')}`), i6 = RM.indexOf(`2026${String(m).padStart(2, '0')}`);
+    if (ref[i5] > 0 && ref[i6] > 0) { a += arr[i6] || 0; b += arr[i5] || 0; } }
+  return [a, b];
+}
+const somaI = (arr, idx) => idx.reduce((s, i) => s + (arr[i] || 0), 0);
+const ytdR = (arr, ano) => somaI(arr, mesesAte(ano, S.corte));
+function triR(arr) {   // últimos 3 meses até o corte contra os 3 anteriores (tendência dentro de 2026)
+  const fim = RM.indexOf(`2026${String(S.corte).padStart(2, '0')}`);
+  if (fim < 5) return [NaN, NaN];
+  return [somaI(arr, [fim - 2, fim - 1, fim]), somaI(arr, [fim - 5, fim - 4, fim - 3])];
+}
+function serie48(arr) {
+  const a = new Float64Array(48).fill(NaN);
+  RM.forEach((m, i) => { const y = +m.slice(0, 4), mo = +m.slice(4); if (arr[i]) a[(y - ANO0) * 12 + mo - 1] = arr[i]; });
+  for (let m = S.corte; m < 12; m++) a[36 + m] = NaN;
+  return a;
+}
+const somaArr = (lista, campo) => { const o = new Array(RM.length).fill(0); lista.forEach(x => x[campo].forEach((v, i) => { o[i] += v || 0; })); return o; };
+const nomesSel = k => (S.f[k].size ? new Set([...S.f[k]].map(i => dic[k][i])) : null);
+const GRUPO_MARCA = m => (['SUSTAGEN', 'JONTEX', 'OLLA', 'VEET'].includes(m) ? 'HN' : m);
+const marcasRede = () => (S.f.marca.size ? new Set([...S.f.marca].map(i => GRUPO_MARCA(dic.marca[i]))) : null);
+const marcasScan = () => (S.f.marca.size ? new Set([...S.f.marca].map(i => dic.marca[i])) : null);
+const temHN = () => [...S.f.marca].some(i => GRUPO_MARCA(dic.marca[i]) === 'HN');
+const CRUZ = {};   // 'REDE|UF' -> raízes do Colecta; 'raiz' -> [rede|uf]
+if (RD) (RD.cruz || []).forEach(c => { CRUZ[c.rede + '|' + c.uf] = c.raizes; c.raizes.forEach(r => { (CRUZ['r:' + r] = CRUZ['r:' + r] || []).push(c.rede + '|' + c.uf); }); });
+function leituraRede(r, m, so, motivo) {
+  if (motivo) return motivo;
+  if (so) return ['Só Reckitt (rede não libera o mercado)', 'flat'];
+  if (r === -1) return ['Parou de vender', 'down'];
+  if (!isFinite(r)) return ['Sem base de 2025', 'flat'];
+  const cr = r > 0.02 ? 1 : r < -0.02 ? -1 : 0;
+  if (!isFinite(m)) return cr > 0 ? ['Cresce', 'up'] : cr < 0 ? ['Cai', 'down'] : ['Estável', 'flat'];
+  const d = r - m;
+  if (Math.abs(d) <= 0.02) return cr > 0 ? ['Cresce em linha com a rede', 'up'] : cr < 0 ? ['Cai junto com a rede', 'down'] : ['Estável, em linha com a rede', 'flat'];
+  if (d > 0) return cr > 0 ? ['Cresce acima da rede (ganha share)', 'up'] : cr === 0 ? ['Estável com a rede caindo (ganha share)', 'flat'] : ['Cai menos que a rede (ganha share)', 'flat'];
+  if (cr > 0) return ['Cresce abaixo da rede (perde share)', 'flat'];
+  if (cr === 0) return ['Estável com a rede crescendo (perde share)', 'down'];
+  return m > 0.02 ? ['Perde share: a rede cresce e a Reckitt cai', 'down'] : ['Cai mais que a rede (perde share)', 'down'];
+}
+const vpp = d => (isFinite(d) ? `<span class="vbig ${cls(d) || 'flat'}">${d > 0.0005 ? '▲' : d < -0.0005 ? '▼' : '●'} ${d > 0 ? '+' : ''}${nf1.format(d * 100)} pp</span>` : '');
+const selo = ([t, c]) => `<span class="vr ${c}">${t}</span>`;
+function termometro(itens) {   // quantas crescem, ficam estáveis e caem
+  const c = {up: 0, flat: 0, down: 0}; itens.forEach(x => { const v = x.v; if (!isFinite(v)) return; c[v > 0.02 ? 'up' : v < -0.02 ? 'down' : 'flat']++; });
+  return `<div class="termo"><span class="vbig up">▲ ${c.up} crescem</span><span class="vbig flat">● ${c.flat} estáveis</span><span class="vbig down">▼ ${c.down} caem</span></div>`;
+}
+function thSort(t, c, rot, cls = '') { const k = S.ui['sort' + t] || ''; const on = k.replace('-', '') === String(c); return `<th class="sort ${cls}" data-act="sort" data-t="${t}" data-c="${c}">${rot}${on ? (k.startsWith('-') ? ' ↑' : ' ↓') : ''}</th>`; }
+function ordena(lista, t, colunas, padrao) {
+  const k = S.ui['sort' + t] || String(padrao), asc = k.startsWith('-'), f = colunas[+k.replace('-', '')];
+  return lista.sort((a, b) => { const x = f(a), y = f(b);
+    if (typeof x === 'string') return (asc ? 1 : -1) * String(y).localeCompare(String(x), 'pt-BR');
+    const fx = Number.isFinite(x), fy = Number.isFinite(y); if (fx !== fy) return fx ? -1 : 1; if (!fx) return 0;   // sem valor vai para o fim
+    return asc ? x - y : y - x; });
+}
+const buscaRede = (id, valor, ph) => `<input class="find" id="${id}" type="search" placeholder="${ph}" value="${esc(valor || '')}" aria-label="${ph}">`;
+
+/* ----- Redes Scanntech ----- */
+function scanLinhas() {
+  const uf = nomesSel('uf'), mk = marcasScan(), rc = nomesSel('recorte');
+  if (rc && !rc.has('ÁREA 7')) return [];   // a Scanntech desta base é só a Área 7 (sem PA)
+  if (mk && RD.scanm) {   // modo marca: Reckitt = marcas escolhidas; mercado = categorias em que elas vendem (top SKUs da rede)
+    return Object.entries(RD.scanm).map(([k, L]) => { const [rede, u] = k.split('|'); if (uf && !uf.has(u)) return null;
+      const minhas0 = L.filter(l => mk.has(l[1])); if (!minhas0.length) return null;
+      // mercado da marca = só as categorias em que ela pesa (5% ou mais da categoria); evita, por exemplo, Desinfetante inteiro no mercado da Veja
+      const tot = l => l[3].reduce((a, v) => a + (v || 0), 0), cats = new Set();
+      [...new Set(minhas0.map(l => l[0]))].forEach(c => { const m = minhas0.filter(l => l[0] === c).reduce((a, l) => a + tot(l), 0), t = L.filter(l => l[0] === c).reduce((a, l) => a + tot(l), 0); if (t > 0 && m / t >= 0.05) cats.add(c); });
+      const minhas = minhas0.filter(l => cats.has(l[0])); if (!minhas.length) return null;
+      const so = (RD.scan.find(z => z.rede === rede && z.uf === u) || {}).so;
+      return {rede, uf: u, so: !!so, rk: somaArr(minhas.map(l => ({v: l[3]})), 'v'), mk: somaArr(L.filter(l => cats.has(l[0])).map(l => ({v: l[3]})), 'v')}; }).filter(Boolean);
+  }
+  return RD.scan.filter(s => !uf || uf.has(s.uf));
+}
+function pgRedesScan() {
+  if (!RD) return hero('Redes Scanntech', 'Sem base de redes.', 'Gere o arquivo de dados com a base de redes.');
+  const L = scanLinhas(), mer = L.filter(s => !s.so);
+  // mesmas redes e mesmos meses: só os meses até o corte em que a rede vendeu nos dois anos
+  let rk26 = 0, rk25 = 0, mk26 = 0, mk25 = 0;
+  mer.forEach(s => { const [a, b] = parR(s.rk, s.mk), [c, d] = parR(s.mk); rk26 += a; rk25 += b; mk26 += c; mk25 += d; });
+  const sh26 = rk26 / mk26, sh25 = rk25 / mk25;
+  const tudo26 = L.reduce((a, s) => a + ytdR(s.rk, 2026), 0);
+  const itens = L.map(s => {
+    const r26 = ytdR(s.rk, 2026), r25 = ytdR(s.rk, 2025), m26 = ytdR(s.mk, 2026), [t3, t0] = triR(s.rk);
+    const [p26, p25] = parR(s.rk, s.so ? s.rk : s.mk), [q26, q25] = parR(s.mk);
+    const [k3] = triR(s.mk), foraPainel = !(m26 > 0), saiu3 = !(k3 > 0);
+    let vr = varR(p26, p25), motivo = null;
+    if (foraPainel && r25 >= 1000) { vr = NaN; motivo = ['Sem leitura da Scanntech em 2026 (saiu do painel)', 'flat']; }
+    else if (r25 >= 1000 && !(r26 > 0)) vr = -1;
+    else if (!isFinite(vr) && r25 >= 1000) motivo = p25 >= 1000 && p26 / p25 > 10 ? ['Variação acima de 10x', 'flat'] : ['Sem meses comparáveis entre 25 e 26', 'flat'];
+    const vm = !s.so ? varR(q26, q25) : NaN;
+    return {s, r26, r25, vr, vm, motivo, sh: s.so || !(m26 > 0) ? NaN : r26 / m26, dsh: s.so || !(q25 > 0) || !(q26 > 0) ? NaN : (p26 / q26 - p25 / q25) * 100, tr: saiu3 ? NaN : varQ(t3, t0), v: vr, col: CRUZ[s.rede + '|' + s.uf]};
+  }).filter(x => x.r26 > 0 || x.r25 > 0);
+  const sel = S.ui.scsel ? itens.find(x => x.s.rede + '|' + x.s.uf === S.ui.scsel) : null;
+  let h = hero('Redes Scanntech', 'Redes de varejo.', 'Venda das lojas, mercado da rede e share da Reckitt. Clique numa rede para abrir.') + recorteTxt();
+  if (nomesSel('recorte') && !nomesSel('recorte').has('ÁREA 7')) h += '<p class="note">A Scanntech desta base cobre só a Área 7 (DF, GO, MT, MS e TO): não há redes do JC PA.</p>';
+  else if (nomesSel('uf') && ![...nomesSel('uf')].some(u => ['DF', 'GO', 'MT', 'MS', 'TO'].includes(u))) h += '<p class="note">A Scanntech desta base cobre só DF, GO, MT, MS e TO: não há redes do PA.</p>';
+  const semAbertura = S.f.marca.size && RD.scanm ? [...S.f.marca].map(i => dic.marca[i]).filter(m => !Object.values(RD.scanm).some(L => L.some(l => l[1] === m))) : [];
+  if (semAbertura.length) h += `<p class="note">${semAbertura.map(tit).join(', ')} não aparece na abertura por marca da Scanntech (as categorias de H&N não estão nesta consulta)${semAbertura.length < S.f.marca.size ? ' e ficou de fora da conta' : '. Desmarque a marca para ver a Reckitt inteira'}.</p>`;
+  if (!L.length) return h + `<div class="card empty">Nada neste recorte.</div>`;
+  if (S.f.marca.size && RD.scanm) h += `<p class="note">Recorte por marca (${[...S.f.marca].map(i => tit(dic.marca[i])).join(', ')}): abertura das ${Object.keys(RD.scanm).length} maiores redes. Mercado = categorias em que a marca pesa 5% ou mais, pelos SKUs mais vendidos de cada rede. O Vanish pó não vem nesta consulta. Como a lista de SKUs é a dos mais vendidos hoje, as variações por marca tendem a sair alguns pontos acima das do Resumo Mensal.</p>`;
+  else if (S.f.marca.size) h += '<p class="note">A abertura por marca da Scanntech ainda não está na base: os números são da Reckitt inteira.</p>';
+  if (S.f.segmento.size) h += '<p class="note">O segmento não abre nas redes da Scanntech: os números são da marca inteira.</p>';
+  if (['executivo', 'grp', 'canal', 'fonte', 'janela'].some(k => S.f[k].size)) h += '<p class="note">Executivo, distribuidor, canal, fonte e comparabilidade não se aplicam à Scanntech (venda das lojas). Aqui vale só a UF; para ver por executivo, use Redes Colecta.</p>';
+  h += `<div class="grid g4">
+    <div class="card kpi"><div class="lab">Reckitt nas redes ${corteTxt()}</div><div class="val">${mi(mer.reduce((a, s) => a + ytdR(s.rk, 2026), 0))}</div><div class="sub dv">${vbig(varr(rk26, rk25))}<span>mesmas redes e meses: ${mi(rk26)} contra ${mi(rk25)}</span></div></div>
+    <div class="card kpi"><div class="lab">Mercado das redes</div><div class="val">${mi(mer.reduce((a, s) => a + ytdR(s.mk, 2026), 0))}</div><div class="sub dv">${vbig(varr(mk26, mk25))}<span>mesmas redes e meses, nossas categorias</span></div></div>
+    <div class="card kpi"><div class="lab">Share da Reckitt</div><div class="val">${p1(sh26)}</div><div class="sub dv">${vpp(sh26 - sh25)}<span>${p1(sh25)} em 2025</span></div></div>
+    <div class="card kpi"><div class="lab">Redes com venda</div><div class="val">${n0(itens.length)}</div><div class="sub">${mi(tudo26)} de Reckitt em 2026, incluindo as que só liberam a Reckitt</div></div></div>`;
+  h += `<h2 class="sec">Quantas crescem e quantas caem. <span>Reckitt ${corteTxt()} 2026 contra 2025, por rede e UF.</span></h2>` + termometro(itens);
+  if (sel) h += detalheScan(sel);
+  RD_ULT = {tipo: 'sc', itens};
+  h += `<h2 class="sec">Todas as redes. <span>Ordene pelo cabeçalho; busque pelo nome.</span></h2><div class="card"><div class="pills">${buscaRede('scbusca', S.ui.scbusca, 'Buscar rede')}</div><div id="rd-tab">${tabelaScan(itens)}</div></div>`;
+  return h;
+}
+function tabelaScan(itens) {
+  const busca = semAcento(S.ui.scbusca || '');
+  let lista = itens.filter(x => !busca || semAcento(x.s.rede).includes(busca));
+  lista = ordena(lista, 'sc', [x => x.s.rede, x => x.s.uf, x => x.r25, x => x.r26, x => x.vr, x => x.vm, x => x.sh, x => x.dsh, x => x.tr], 3);
+  const mostra = S.ui.sctodas ? lista : lista.slice(0, 60);
+  return `<div class="tw"><table><thead><tr>${thSort('sc', 0, 'Rede', 'l')}${thSort('sc', 1, 'UF', 'l')}${thSort('sc', 2, 'Reckitt 25')}${thSort('sc', 3, 'Reckitt 26')}${thSort('sc', 4, 'Reckitt var.')}${thSort('sc', 5, 'Mercado var.')}${thSort('sc', 6, 'Share 26')}${thSort('sc', 7, 'Δ share')}${thSort('sc', 8, 'Últ. 3m vs 3 ant.')}<th class="l">Leitura</th><th class="l">No Colecta</th></tr></thead><tbody>` +
+    (mostra.length ? '' : '<tr><td colspan="11" class="empty">Nada neste recorte.</td></tr>') + mostra.map(x => `<tr class="clk" data-act="ui" data-k="scsel" data-v="${esc(x.s.rede + '|' + x.s.uf)}"><td class="l b">${tit(x.s.rede)}</td><td class="l">${x.s.uf}</td><td>${n0(x.r25)}</td><td class="b">${n0(x.r26)}</td><td>${vc(x.vr)}</td><td>${vc(x.vm)}</td><td>${p1(x.sh)}</td><td>${isFinite(x.dsh) ? `<span class="vr ${cls(x.dsh / 100) || 'flat'}">${x.dsh > 0 ? '+' : ''}${nf1.format(x.dsh)} pp</span>` : ''}</td><td>${vc(x.tr)}</td><td class="l">${selo(leituraRede(x.vr, x.vm, x.s.so, x.motivo))}</td><td class="l">${x.col ? '<span class="tag">✓ cruzada</span>' : ''}</td></tr>`).join('') +
+    `</tbody></table></div>${!S.ui.sctodas && lista.length > 60 ? `<div class="pager"><button data-act="ui" data-k="sctodas" data-v="1">Mostrar todas as ${n0(lista.length)} redes</button></div>` : ''}
+    <p class="note" style="margin:12px 0 0">Reckitt R$ = mercado da rede × share da Reckitt (Scanntech, Resumo por Rede Mensal). A variação compara só os meses em que a rede vendeu nos dois anos (mesmas redes e mesmos meses); "Parou de vender" = tinha venda em 2025 e zerou em 2026. Redes que só liberam a venda da Reckitt ficam fora do mercado e do share.</p>`;
+}
+function detalheScan(x) {
+  const s = x.s, a = serie48(s.rk);
+  let h = `<div class="card det"><div class="det-top"><div><p class="eyebrow">${s.uf} · Scanntech</p><h3>${tit(s.rede)}. <span>${x.motivo ? x.motivo[0] + '.' : !(x.r26 > 0) ? 'Sem venda da Reckitt em 2026.' : s.so ? 'Só libera a venda da Reckitt.' : `Share de ${p1(x.sh)} em 2026.`}</span></h3></div><button class="btn" data-act="ui" data-k="scsel" data-v="">Fechar</button></div>
+    <div class="termo">${isFinite(x.vr) ? vbig(x.vr) + '<span class="sub">Reckitt 26 contra 25</span>' : ''}${!s.so && isFinite(x.vm) ? vbig(x.vm) + '<span class="sub">mercado da rede</span>' : ''}${isFinite(x.tr) ? vbig(x.tr) + '<span class="sub">últimos 3 meses contra os 3 anteriores</span>' : ''}</div>
+    ${chart(a, 'rs', 250, null, true, {fv: varR})}<div class="tw"><table><thead><tr><th>Mês</th><th>Mercado 25</th><th>Mercado 26</th><th>Reckitt 25</th><th>Reckitt 26</th><th>Reckitt var.</th><th>Share 25</th><th>Share 26</th><th>Δ share</th></tr></thead><tbody>` +
+    ate(12).map(m => { const i5 = RM.indexOf(`2025${String(m).padStart(2, '0')}`), i6 = RM.indexOf(`2026${String(m).padStart(2, '0')}`), ok6 = m <= S.corte;
+      const m5 = s.mk[i5], m6 = ok6 ? s.mk[i6] : 0, r5 = s.rk[i5], r6 = ok6 ? s.rk[i6] : 0, s5 = m5 ? r5 / m5 : NaN, s6 = m6 ? r6 / m6 : NaN, d = (s6 - s5) * 100;
+      return `<tr><td class="b">${MESES[m - 1]}</td><td>${n0(m5 || NaN)}</td><td class="b">${n0(m6 || NaN)}</td><td>${n0(r5 || NaN)}</td><td class="b">${n0(r6 || NaN)}</td><td>${vc(varR(r6, r5))}</td><td>${s.so ? '' : p1(s5)}</td><td>${s.so ? '' : p1(s6)}</td><td>${!s.so && isFinite(d) ? `<span class="vr ${cls(d / 100) || 'flat'}">${d > 0 ? '+' : ''}${nf1.format(d)} pp</span>` : ''}</td></tr>`; }).join('') + '</tbody></table></div>';
+  h += marcasScanDet(s.rede + '|' + s.uf);
+  h += cruzadoColecta(x.col, s.uf);
+  return h + '</div>';
+}
+function marcasScanDet(k) {
+  const L = RD.scanm && RD.scanm[k]; if (!L || !L.length) return RD.scanm ? '<p class="note" style="margin-top:16px">Abertura por marca disponível só nas maiores redes (Reckitt acima de R$ 100 mil em 2026).</p>' : '';
+  const cats = [...new Set(L.map(l => l[0]))].map(c => { const Lc = L.filter(l => l[0] === c), t26 = Lc.reduce((a, l) => a + ytdR(l[3], 2026), 0), t25 = Lc.reduce((a, l) => a + ytdR(l[3], 2025), 0);
+    return {c, Lc, t26, t25, rk: Lc.filter(l => l[2]).reduce((a, l) => a + ytdR(l[3], 2026), 0)}; }).filter(x => x.rk > 0).sort((a, b) => b.rk - a.rk);
+  if (!cats.length) return '';
+  const cob = RD.scancob && RD.scancob[k];
+  return `<div class="cruz"><p class="eyebrow">Marcas e concorrentes na rede · Scanntech</p><h3>Onde a Reckitt ganha e onde perde espaço. <span>Share dentro de cada categoria, ${corteTxt()} 2026 contra 2025.</span></h3>` +
+    (cob ? `<p class="note">A abertura por marca cobre ${p1(Math.min(cob, 1))} da Reckitt desta rede no Resumo Mensal${cob < 0.9 ? ' (falta principalmente o Vanish pó, que não vem nesta consulta)' : ''}.</p>` : '') +
+    cats.map(x => `<p class="eyebrow" style="margin-top:18px;color:var(--slate)">${esc(x.c)}</p><div class="tw"><table><thead><tr><th class="l">Marca</th><th>R$ 25</th><th>R$ 26</th><th>26 vs 25</th><th>Últ. 3m vs 3 ant.</th><th>Share 25</th><th>Share 26</th><th>Δ share</th></tr></thead><tbody>` +
+      x.Lc.map(l => ({l, a: ytdR(l[3], 2025), b: ytdR(l[3], 2026)})).sort((p, q) => (q.l[2] - p.l[2]) || (q.b - p.b)).map(({l, a, b}) => { const s5 = x.t25 ? a / x.t25 : NaN, s6 = x.t26 ? b / x.t26 : NaN, d = (s6 - s5) * 100;
+        return `<tr><td class="l ${l[2] ? 'b ' + mkCls(l[1]) : ''}">${l[1] === 'OUTRAS' ? 'Outras marcas' : tit(l[1])}${l[2] ? ' <span class="mini">Reckitt</span>' : ''}</td><td>${n0(a || NaN)}</td><td class="${l[2] ? 'b' : ''}">${n0(b || NaN)}</td><td>${vc(varR(b, a))}</td><td>${vc(varR(...triR(l[3])))}</td><td>${p1(s5)}</td><td>${p1(s6)}</td><td>${isFinite(d) ? `<span class="vr ${cls(d / 100) || 'flat'}">${d > 0 ? '+' : ''}${nf1.format(d)} pp</span>` : ''}</td></tr>`; }).join('') + '</tbody></table></div>').join('') +
+    '<p class="note" style="margin-top:10px">Fonte: Scanntech, KPIs por SKU da rede (SKUs mais vendidos, Reckitt e concorrentes). O Vanish pó não vem nesta consulta; o total da Reckitt da rede, no alto, inclui tudo.</p></div>';
+}
+function cruzadoColecta(raizes, uf) {
+  if (!raizes || !raizes.length) return '<p class="note" style="margin-top:16px">Esta rede não foi encontrada entre os clientes dos distribuidores no Colecta (pode comprar direto da Reckitt ou de distribuidor fora da base).</p>';
+  const mk = marcasRede(), fonte = mk && RD.colm ? RD.colm.filter(c => mk.has(c.marca)) : RD.col;
+  const todas = fonte.filter(c => raizes.includes(c.raiz)), L = todas.filter(c => c.uf === uf), tot = somaArr(L, 'rs');
+  const outras = ytdR(somaArr(todas.filter(c => c.uf !== uf), 'rs'), 2026);
+  const lb = somaArr(L.filter(c => BASE_COMP.has(c.grp)), 'rs'), r26c = ytdR(lb, 2026), r25 = ytdR(lb, 2025), r26 = ytdR(tot, 2026);
+  const grps = [...new Set(L.map(c => c.grp))].map(tit).join(', ');
+  return `<div class="cruz"><p class="eyebrow">A mesma rede no Colecta · ${uf}${mk ? ' · ' + [...mk].map(m => m === 'HN' ? 'H&N' : tit(m)).join(', ') : ''}</p><h3>${rsx(r26)} comprados dos distribuidores em ${uf} ${corteTxt()}. <span>${raizes.map(nomeRaiz).map(tit).join(' · ')}</span></h3>
+    <div class="termo">${r25 >= 1000 ? vbig(varQ(r26c, r25)) + '<span class="sub">26 contra 25 nos distribuidores com 2025 completo</span>' : '<span class="sub">Sem base comparável de 2025 no Colecta (distribuidor entrou depois ou 2025 incompleto)</span>'}${isFinite(varQ(...triCol(L))) ? vbig(varQ(...triCol(L))) + '<span class="sub">últimos 3 meses contra os 3 anteriores</span>' : ''}</div>
+    <p class="note">${grps ? 'Distribuidores: ' + grps + '. ' : 'Sem compra pelos distribuidores nesta UF. '}${outras >= 1000 ? `A mesma empresa compra mais ${rsx(outras)} em outras UFs. ` : ''}Compra do distribuidor (Colecta) e venda ao consumidor (Scanntech) andam em ritmos diferentes: a compra concentra pedidos e a loja vende todo dia.</p>
+    ${r26 >= 1000 ? chart(serie48(tot), 'rs', 200, null, true, {semVar: true}) : ''}</div>`;
+}
+
+/* ----- Redes Colecta ----- */
+const recorteGrp = g => (g === 'JC DISTR. PA' ? 'JC PA (FORA DA ÁREA 7)' : 'ÁREA 7');   // recorte é do distribuidor, como no resto do site
+function colLinhas(semMarca) {
+  const uf = nomesSel('uf'), gr = nomesSel('grp'), ex = nomesSel('executivo'), rc = nomesSel('recorte'), mk = semMarca ? null : marcasRede();
+  const fonte = mk && RD.colm ? RD.colm.filter(c => mk.has(c.marca)) : RD.col;
+  return fonte.filter(c => (!uf || uf.has(c.uf)) && (!gr || gr.has(c.grp)) && (!ex || ex.has(c.exec)) && (!rc || rc.has(recorteGrp(c.grp))));
+}
+const temBase = c => BASE_COMP.has(c.grp);
+function triFora(L) {   // distribuidores do recorte que ficam fora da tendência por não cobrirem as 6 janelas
+  const fim = RM.indexOf(`2026${String(S.corte).padStart(2, '0')}`), ini = RD.inicio_tend || RD.dist_inicio; if (fim < 5) return [];
+  return [...new Set(L.filter(c => (ini[c.grp] || '9') > RM[fim - 5]).map(c => tit(c.grp)))];
+}
+function triCol(L) {   // tendência só com distribuidores que já existiam nas 6 janelas
+  const fim = RM.indexOf(`2026${String(S.corte).padStart(2, '0')}`); if (fim < 5) return [NaN, NaN];
+  const ini = RD.inicio_tend || RD.dist_inicio;
+  return triR(somaArr(L.filter(c => (ini[c.grp] || '9') <= RM[fim - 5]), 'rs'));
+}
+const EXEC_GRP = {}; if (RD) RD.col.forEach(c => { EXEC_GRP[c.grp] = c.exec; }); if (RD && RD.colm) RD.colm.forEach(c => { c.exec = EXEC_GRP[c.grp] || ''; });
+function pgRedesCol() {
+  if (!RD) return hero('Redes Colecta', 'Sem base de redes.', 'Gere o arquivo de dados com a base de redes.');
+  const L = colLinhas(), mk = marcasRede(), lojasDe = mk && mk.size > 1 ? colLinhas(true) : null;   // várias marcas: lojas da rede inteira (sem somar marca a marca)
+  const por = new Map();
+  L.forEach(c => { const x = por.get(c.raiz) || {raiz: c.raiz, linhas: []}; x.linhas.push(c); por.set(c.raiz, x); });
+  const itens = [...por.values()].map(x => {
+    const rs = somaArr(x.linhas, 'rs'), lj = somaArr(lojasDe ? lojasDe.filter(c => c.raiz === x.raiz) : x.linhas, 'lj'), base = x.linhas.filter(temBase), rb = somaArr(base, 'rs');
+    const r26 = ytdR(rs, 2026), b25 = ytdR(rb, 2025), b26 = ytdR(rb, 2026), [t3, t0] = triCol(x.linhas);
+    const ult = RM.indexOf(`2026${String(S.corte).padStart(2, '0')}`);
+    return {raiz: x.raiz, linhas: x.linhas, rs, lj, r26, b26, b25, vr: varQ(b26, b25), parcial: base.length < x.linhas.length, tr: varQ(t3, t0), v: varQ(t3, t0),
+      lojas: lj[ult] || 0, ufs: [...new Set(x.linhas.map(c => c.uf))].join(', '), grps: [...new Set(x.linhas.map(c => c.grp))], sc: CRUZ['r:' + x.raiz]};
+  }).filter(x => x.r26 > 0 || x.b25 > 0);
+  const tot = somaArr(L, 'rs'), base = somaArr(L.filter(temBase), 'rs'), r26 = ytdR(tot, 2026), b26 = ytdR(base, 2026), b25 = ytdR(base, 2025);
+  const ult = RM.indexOf(`2026${String(S.corte).padStart(2, '0')}`), lojasUlt = somaArr(lojasDe || L, 'lj')[ult] || 0;
+  const chU = (() => { if (mk || S.f.recorte.size) return null; const ex = nomesSel('executivo'), uf = nomesSel('uf'), gr = nomesSel('grp'); const p = [];
+    if (ex) { if (ex.size > 1) return null; p.push('exec:' + [...ex][0]); } if (gr) { if (gr.size > 1 || ex) return null; p.push('grp:' + [...gr][0]); } if (uf) { if (uf.size > 1) return null; p.push('uf:' + [...uf][0]); } return p.join('|'); })();
+  const unicosUlt = chU !== null && RD.unicos && RD.unicos[chU] ? RD.unicos[chU][ult] || 0 : null;
+  const nomeadas = itens.filter(x => x.raiz !== 'DEMAIS' && x.raiz !== 'PF').sort((a, b) => b.r26 - a.r26);
+  const top20 = nomeadas.slice(0, 20).reduce((a, x) => a + x.r26, 0);
+  const sel = S.ui.clsel ? itens.find(x => x.raiz === S.ui.clsel) : null;
+  let h = hero('Redes Colecta', 'Redes compradoras.', 'Clientes dos distribuidores agrupados por rede (raiz do CNPJ). Filtre executivo, UF e distribuidor no topo.') + recorteTxt();
+  if (S.f.marca.size && !RD.colm) h += '<p class="note">A abertura por marca das redes do Colecta ainda não está na base: os números são de todas as marcas.</p>';
+  else if (S.f.marca.size) h += `<p class="note">Recorte por marca: ${[...S.f.marca].map(i => tit(dic.marca[i])).join(', ')}.${temHN() ? ' Sustagen, Jontex, Olla e Veet aparecem juntos como H&N nas redes.' : ''}</p>`;
+  if (S.f.segmento.size) h += '<p class="note">O segmento não abre nas redes: os números são da marca inteira.</p>';
+  if (['canal', 'fonte', 'janela'].some(k => S.f[k].size)) h += '<p class="note">Canal, fonte e comparabilidade não se aplicam às redes do Colecta: os números são de todos os canais. Aqui valem UF da loja, distribuidor, executivo, recorte e marca.</p>';
+  if (S.f.uf.size) h += '<p class="note">A UF aqui é a da loja (cadastro do CNPJ), não a do distribuidor. Lojas da BA e do MA (atendidas pelo JC Atacado) só aparecem sem filtro de UF.</p>';
+  h += `<div class="grid g4">
+    <div class="card kpi"><div class="lab">Compra das redes ${corteTxt()}</div><div class="val">${mi(r26)}</div><div class="sub dv">${b25 >= 1000 ? vbig(varr(b26, b25)) + `<span>26 contra 25 na base comparável (${[...new Set(L.filter(temBase).map(c => tit(c.grp)))].join(', ')})</span>` : '<span>sem base comparável de 2025 neste recorte</span>'}</div></div>
+    <div class="card kpi"><div class="lab">Tendência</div><div class="val ${cls(varR(...triCol(L)))}">${isFinite(varR(...triCol(L))) ? pc(varR(...triCol(L))) : '·'}</div><div class="sub">${isFinite(varR(...triCol(L))) ? 'últimos 3 meses contra os 3 anteriores' + (triFora(L).length ? ' (sem ' + triFora(L).join(', ') + ', que não cobre as 6 janelas)' : '') : 'sem as 6 janelas de comparação: o distribuidor entrou depois'}</div></div>
+    <div class="card kpi"><div class="lab">Lojas compradoras em ${mes(S.corte)}</div><div class="val">${n0(unicosUlt !== null ? unicosUlt : lojasUlt)}</div><div class="sub">${unicosUlt !== null ? `CNPJs únicos; soma por distribuidor ${n0(lojasUlt)} (sobreposição ${p1(1 - unicosUlt / lojasUlt)})` : `CNPJs, soma por distribuidor${lojasDe ? ' (todas as marcas)' : ''}`}; ${n0(nomeadas.length)} redes nomeadas</div></div>
+    <div class="card kpi"><div class="lab">Concentração</div><div class="val">${p1(top20 / r26)}</div><div class="sub">do R$ nas 20 maiores redes</div></div></div>`;
+  h += `<h2 class="sec">Quantas crescem e quantas caem. <span>Tendência dos últimos 3 meses contra os 3 anteriores, por rede.</span></h2>` + termometro(nomeadas);
+  if (sel) h += detalheCol(sel);
+  RD_ULT = {tipo: 'cl', itens};
+  if (!L.length) h += '<p class="note">Nenhuma rede neste recorte: o executivo ou o distribuidor escolhido não tem distribuidor no Colecta.</p>';
+  h += `<h2 class="sec">Todas as redes. <span>Ordene pelo cabeçalho; busque por nome ou cidade.</span></h2><div class="card"><div class="pills">${buscaRede('clbusca', S.ui.clbusca, 'Buscar rede ou cidade')}</div><div id="rd-tab">${tabelaCol(itens)}</div></div>`;
+  return h;
+}
+function tabelaCol(itens) {
+  const busca = semAcento(S.ui.clbusca || '');
+  let lista = itens.filter(x => !busca || semAcento(nomeRaiz(x.raiz) + ' ' + ((RD.nomes[x.raiz] || {}).razao || '') + ' ' + ((RD.nomes[x.raiz] || {}).municipio || '')).includes(busca));
+  lista = ordena(lista, 'cl', [x => nomeRaiz(x.raiz), x => x.ufs, x => x.b25, x => x.r26, x => x.vr, x => x.tr, x => x.lojas], 3);
+  lista = [...lista.filter(x => x.raiz !== 'DEMAIS' && x.raiz !== 'PF'), ...lista.filter(x => x.raiz === 'DEMAIS' || x.raiz === 'PF')];
+  const mostra = S.ui.cltodas ? lista : lista.slice(0, 80);
+  return `<div class="tw"><table><thead><tr>${thSort('cl', 0, 'Rede', 'l')}${thSort('cl', 1, 'UF', 'l')}<th class="l">Distribuidor</th>${thSort('cl', 2, 'R$ 25 (base)')}${thSort('cl', 3, 'R$ 26')}${thSort('cl', 4, '26 vs 25')}${thSort('cl', 5, 'Últ. 3m vs 3 ant.')}${thSort('cl', 6, `Lojas ${mes(S.corte)}`)}<th class="l">Na Scanntech</th></tr></thead><tbody>` +
+    (mostra.length ? '' : '<tr><td colspan="9" class="empty">Nada neste recorte.</td></tr>') + mostra.map(x => { const n = RD.nomes[x.raiz] || {}; return `<tr class="clk" data-act="ui" data-k="clsel" data-v="${x.raiz}"><td class="l b">${tit(nomeRaiz(x.raiz))}${n.municipio ? `<div class="mini">${esc(n.municipio)}</div>` : ''}</td><td class="l">${x.ufs}</td><td class="l">${x.grps.map(tit).join(', ')}</td><td>${n0(x.b25 || NaN)}</td><td class="b">${n0(x.r26)}</td><td>${vc(x.vr)}${x.parcial && isFinite(x.vr) ? '<span class="mini"> base parcial</span>' : ''}</td><td>${vc(x.tr)}</td><td>${n0(x.lojas || NaN)}</td><td class="l">${x.sc ? `<span class="tag">✓ ${x.sc.map(k => tit(k.split('|')[0])).filter((v, i, a) => a.indexOf(v) === i).join(', ')}</span>` : ''}</td></tr>`; }).join('') +
+    `</tbody></table></div>${!S.ui.cltodas && lista.length > 80 ? `<div class="pager"><button data-act="ui" data-k="cltodas" data-v="1">Mostrar todas as ${n0(lista.length)} redes</button></div>` : ''}
+    <p class="note" style="margin:12px 0 0">Rede = raiz do CNPJ (8 dígitos); nome pela Receita. As 1.000 maiores redes aparecem nomeadas; o resto está em "Demais clientes". 26 contra 25 só nos distribuidores com 2025 completo no Colecta (DAC, Rio Vermelho, A.S.E. e Alvorada) (acumulado, mês sem compra conta como zero). O JC entrou em jan/26, a Troia em out/25 e a Rede Brasil tem 2025 incompleto: para eles vale a tendência dos últimos 3 meses. Lojas = soma de CNPJs por distribuidor.</p>`;
+}
+function detalheCol(x) {
+  const n = RD.nomes[x.raiz] || {};
+  const porG = x.grps.map(g => { const L = x.linhas.filter(c => c.grp === g), rs = somaArr(L, 'rs'); return {g, r26: ytdR(rs, 2026), r25: temBase({grp: g}) ? ytdR(rs, 2025) : NaN, vr: temBase({grp: g}) ? varQ(ytdR(rs, 2026), ytdR(rs, 2025)) : NaN, tr: varQ(...triCol(L))}; }).sort((a, b) => b.r26 - a.r26);
+  const rb = somaArr(x.linhas.filter(temBase), 'rs');
+  let h = `<div class="card det"><div class="det-top"><div><p class="eyebrow">${x.ufs} · Colecta</p><h3>${tit(nomeRaiz(x.raiz))}. <span>${n.razao ? tit(n.razao) : ''}${n.municipio ? ' · ' + esc(n.municipio) + '/' + (n.uf || '') : ''}${x.raiz.length === 8 ? ' · raiz ' + x.raiz : ''}</span></h3></div><button class="btn" data-act="ui" data-k="clsel" data-v="">Fechar</button></div>
+    <div class="termo">${isFinite(x.vr) ? vbig(x.vr) + '<span class="sub">26 contra 25 na base comparável</span>' : '<span class="sub">Sem base comparável de 2025 no Colecta</span>'}${isFinite(x.tr) ? vbig(x.tr) + '<span class="sub">últimos 3 meses contra os 3 anteriores</span>' : ''}</div>
+    ${chart(serie48(x.rs), 'rs', 250, null, true, {fv: varR, semVar: x.parcial})}<div class="tw"><table><thead><tr><th>Mês</th><th>R$ 25</th><th>R$ 26</th><th>Var. (base comparável)</th><th>Lojas 25</th><th>Lojas 26</th></tr></thead><tbody>` +
+    ate(12).map(m => { const i5 = RM.indexOf(`2025${String(m).padStart(2, '0')}`), i6 = RM.indexOf(`2026${String(m).padStart(2, '0')}`), ok6 = m <= S.corte;
+      const a5 = x.rs[i5], a6 = ok6 ? x.rs[i6] : 0; return `<tr><td class="b">${MESES[m - 1]}</td><td>${n0(a5 || NaN)}</td><td class="b">${n0(a6 || NaN)}</td><td>${vc(varR(ok6 ? rb[i6] : 0, rb[i5]))}</td><td>${n0(x.lj[i5] || NaN)}</td><td class="b">${n0(ok6 ? x.lj[i6] || NaN : NaN)}</td></tr>`; }).join('') + '</tbody></table></div>' +
+    `<p class="eyebrow" style="margin-top:22px">Por distribuidor</p><div class="tw"><table><thead><tr><th class="l">Distribuidor</th><th>R$ 25</th><th>R$ 26</th><th>26 vs 25</th><th>Últ. 3m vs 3 ant.</th></tr></thead><tbody>` +
+    porG.map(p => `<tr><td class="l b">${tit(p.g)}</td><td>${n0(p.r25)}</td><td class="b">${n0(p.r26)}</td><td>${vc(p.vr)}</td><td>${vc(p.tr)}</td></tr>`).join('') + '</tbody></table></div><p class="note" style="margin-top:8px">Lojas = soma de CNPJs por distribuidor. 26 contra 25 só nos distribuidores com 2025 completo no Colecta (acumulado; mês sem compra conta como zero).</p>';
+  if (RD.colm) {
+    const uf = nomesSel('uf'), gr = nomesSel('grp'), ex = nomesSel('executivo'), rc = nomesSel('recorte');
+    const Lm = RD.colm.filter(c => c.raiz === x.raiz && (!uf || uf.has(c.uf)) && (!gr || gr.has(c.grp)) && (!ex || ex.has(c.exec || '')) && (!rc || rc.has(recorteGrp(c.grp))));
+    const ult = RM.indexOf(`2026${String(S.corte).padStart(2, '0')}`);
+    const pm = ['VEJA', 'VANISH', 'FINISH', 'HARPIC', 'HN'].map(m => { const L = Lm.filter(c => c.marca === m); if (!L.length) return null; const rs = somaArr(L, 'rs'), base = somaArr(L.filter(temBase), 'rs');
+      return {m, r26: ytdR(rs, 2026), b25: ytdR(base, 2025), vb: varQ(ytdR(base, 2026), ytdR(base, 2025)), tr: varQ(...triCol(L)), lj: somaArr(L, 'lj')[ult] || 0}; }).filter(Boolean);
+    const t26 = pm.reduce((a, p) => a + p.r26, 0);
+    if (pm.length) h += `<p class="eyebrow" style="margin-top:22px">Marcas na rede</p><div class="tw"><table><thead><tr><th class="l">Marca</th><th>R$ 25 (base)</th><th>R$ 26</th><th>26 vs 25</th><th>Últ. 3m vs 3 ant.</th><th>Peso 26</th><th>Lojas em ${mes(S.corte)}</th></tr></thead><tbody>` +
+      pm.sort((a, b) => b.r26 - a.r26).map(p => `<tr><td class="l b ${mkCls(p.m)}">${p.m === 'HN' ? 'H&N' : tit(p.m)}</td><td>${n0(p.b25 || NaN)}</td><td class="b">${n0(p.r26)}</td><td>${vc(p.vb)}</td><td>${vc(p.tr)}</td><td>${p1(p.r26 / t26)}</td><td>${n0(p.lj || NaN)}</td></tr>`).join('') + '</tbody></table></div>';
+  }
+  if (x.sc) h += x.sc.map(k => { const s = RD.scan.find(z => z.rede + '|' + z.uf === k); if (!s) return ''; const r26 = ytdR(s.rk, 2026), m26 = ytdR(s.mk, 2026), [p26, p25] = parR(s.rk, s.so ? s.rk : s.mk), [q26, q25] = parR(s.mk);
+    const r25 = p25, m25 = q25;
+    return `<div class="cruz"><p class="eyebrow">A mesma rede na Scanntech · ${s.uf}${S.f.marca.size ? ' · Reckitt inteira' : ''}</p><h3>${tit(s.rede)}: ${mi(r26)} de Reckitt vendidos nas lojas ${corteTxt()}. <span>${s.so ? 'Só libera a Reckitt.' : 'Share de ' + p1(r26 / m26) + '.'}</span></h3>
+      <div class="termo">${isFinite(varQ(p26, p25)) ? vbig(varQ(p26, p25)) + '<span class="sub">Reckitt nas lojas, 26 contra 25 (mesmos meses)</span>' : ''}${!s.so && isFinite(varR(q26, q25)) ? vbig(varR(q26, q25)) + '<span class="sub">mercado da rede</span>' : ''}</div>${chart(serie48(s.rk), 'rs', 200, null, true, {fv: varR})}</div>`; }).join('');
+  else h += '<p class="note" style="margin-top:16px">Esta rede não foi encontrada na Scanntech (a loja pode não ter leitura de caixa na Scanntech ou ter outro nome de rede).</p>';
+  return h + '</div>';
+}
+
 function pgDepara() {
   return hero('De-para', 'Distribuidores, fontes e segmentos.', 'Hierarquia do CTO, regra de fonte por período e a régua única entre MTRIX e Colecta.') +
     `<div class="card"><p class="eyebrow">Hierarquia e fonte</p><div class="tw"><table><thead><tr><th class="l">Grp. econômico</th><th class="l">UF</th><th class="l">Canal</th><th class="l">Executivo de vendas</th>
@@ -579,10 +854,17 @@ function render(topo = true) {
   nav();
   const y = scrollY;
   const lados = [...document.querySelectorAll('#app .shelf, #app .tw')].map(x => x.scrollLeft);
-  const P = {inicio: pgInicio, geral: pgGeral, hn: pgHN, diretor: pgDiretor, confronto: pgConfronto, depara: pgDepara, base: pgBase};
+  const P = {inicio: pgInicio, geral: pgGeral, hn: pgHN, diretor: pgDiretor, 'redes-scan': pgRedesScan, 'redes-col': pgRedesCol, confronto: pgConfronto, depara: pgDepara, base: pgBase};
   const app = document.getElementById('app');
   app.innerHTML = (P[S.page] || (() => pgMarca(S.page)))();
   document.title = (S.page === 'inicio' ? '' : PAGES.find(p => p[0] === S.page)[1] + ' · ') + 'Dash Geral CTO';
+  ['scbusca', 'clbusca'].forEach(idb => {   // busca das redes: redesenha só a tabela
+    const inp = document.getElementById(idb); if (!inp) return;
+    let tB = null;
+    const aplica = () => { clearTimeout(tB); tB = setTimeout(() => { S.ui[idb] = inp.value; const box = document.getElementById('rd-tab'); if (box && RD_ULT) box.innerHTML = RD_ULT.tipo === 'sc' ? tabelaScan(RD_ULT.itens) : tabelaCol(RD_ULT.itens); }, 150); };
+    inp.addEventListener('input', e => { if (!e.isComposing) aplica(); });
+    inp.addEventListener('compositionend', aplica);
+  });
   const cb = document.getElementById('cbusca');
   if (cb) {
     let tB = null;
