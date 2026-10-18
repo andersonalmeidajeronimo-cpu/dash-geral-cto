@@ -544,7 +544,7 @@ function pgConfronto() {
 const RD = D.redes || null;
 let RD_ULT = null;
 if (RD && RD.scanm) Object.keys(RD.scanm).forEach(k => { RD.scanm[k] = RD.scanm[k].filter(l => l[0] !== 'Tudo' && l[1] !== 'Tudo'); });   // 'Tudo' = total do Tableau
-const BASE_COMP = new Set(RD && RD.base_comp ? RD.base_comp : ['DAC DISTRIBUIDORA', 'RIO VERMELHO', 'A.S.E. - ANAPOLIS GO', 'COMERCIAL ALVORADA']);
+const BASE_COMP = new Set(RD && RD.base_comp ? RD.base_comp : []);
 const RM = RD ? RD.meses : [];
 const nomeRaiz = r => { if (r === 'DEMAIS') return 'Demais clientes'; if (r === 'PF') return 'Pessoa física e sem CNPJ'; const n = RD.nomes[r] || {}; return (n.fantasia || n.razao || 'CNPJ ' + r); };
 const mesesAte = (ano, n) => ate(n).map(m => RM.indexOf(`${ano}${String(m).padStart(2, '0')}`)).filter(i => i >= 0);
@@ -714,7 +714,8 @@ function cruzadoColecta(raizes, uf) {
 }
 
 /* ----- Redes Colecta ----- */
-const recorteGrp = g => (g === 'JC DISTR. PA' ? 'JC PA (FORA DA ÁREA 7)' : 'ÁREA 7');   // recorte é do distribuidor, como no resto do site
+const FORA_A7 = new Set(RD && RD.fora_area7 ? RD.fora_area7 : []);
+const recorteGrp = g => (FORA_A7.has(g) ? dic.recorte.find(x => x !== 'ÁREA 7') || 'FORA' : 'ÁREA 7');   // recorte é do distribuidor, como no resto do site
 function colLinhas(semMarca) {
   const uf = nomesSel('uf'), gr = nomesSel('grp'), ex = nomesSel('executivo'), rc = nomesSel('recorte'), mk = semMarca ? null : marcasRede();
   const fonte = mk && RD.colm ? RD.colm.filter(c => mk.has(c.marca)) : RD.col;
@@ -756,7 +757,7 @@ function pgRedesCol() {
   else if (S.f.marca.size) h += `<p class="note">Recorte por marca: ${[...S.f.marca].map(i => tit(dic.marca[i])).join(', ')}.${temHN() ? ' Sustagen, Jontex, Olla e Veet aparecem juntos como H&N nas redes.' : ''}</p>`;
   if (S.f.segmento.size) h += '<p class="note">O segmento não abre nas redes: os números são da marca inteira.</p>';
   if (['canal', 'fonte', 'janela'].some(k => S.f[k].size)) h += '<p class="note">Canal, fonte e comparabilidade não se aplicam às redes do Colecta: os números são de todos os canais. Aqui valem UF da loja, distribuidor, executivo, recorte e marca.</p>';
-  if (S.f.uf.size) h += '<p class="note">A UF aqui é a da loja (cadastro do CNPJ), não a do distribuidor. Lojas da BA e do MA (atendidas pelo JC Atacado) só aparecem sem filtro de UF.</p>';
+  if (S.f.uf.size) h += '<p class="note">A UF aqui é a da loja (cadastro do CNPJ), não a do distribuidor. Lojas de UFs fora da lista do filtro (BA e MA) só aparecem sem filtro de UF.</p>';
   h += `<div class="grid g4">
     <div class="card kpi"><div class="lab">Compra das redes ${corteTxt()}</div><div class="val">${mi(r26)}</div><div class="sub dv">${b25 >= 1000 ? vbig(varr(b26, b25)) + `<span>26 contra 25 na base comparável (${[...new Set(L.filter(temBase).map(c => tit(c.grp)))].join(', ')})</span>` : '<span>sem base comparável de 2025 neste recorte</span>'}</div></div>
     <div class="card kpi"><div class="lab">Tendência</div><div class="val ${cls(varR(...triCol(L)))}">${isFinite(varR(...triCol(L))) ? pc(varR(...triCol(L))) : '·'}</div><div class="sub">${isFinite(varR(...triCol(L))) ? 'últimos 3 meses contra os 3 anteriores' + (triFora(L).length ? ' (sem ' + triFora(L).join(', ') + ', que não cobre as 6 janelas)' : '') : 'sem as 6 janelas de comparação: o distribuidor entrou depois'}</div></div>
@@ -778,7 +779,7 @@ function tabelaCol(itens) {
   return `<div class="tw"><table><thead><tr>${thSort('cl', 0, 'Rede', 'l')}${thSort('cl', 1, 'UF', 'l')}<th class="l">Distribuidor</th>${thSort('cl', 2, 'R$ 25 (base)')}${thSort('cl', 3, 'R$ 26')}${thSort('cl', 4, '26 vs 25')}${thSort('cl', 5, 'Últ. 3m vs 3 ant.')}${thSort('cl', 6, `Lojas ${mes(S.corte)}`)}<th class="l">Na Scanntech</th></tr></thead><tbody>` +
     (mostra.length ? '' : '<tr><td colspan="9" class="empty">Nada neste recorte.</td></tr>') + mostra.map(x => { const n = RD.nomes[x.raiz] || {}; return `<tr class="clk" data-act="ui" data-k="clsel" data-v="${x.raiz}"><td class="l b">${tit(nomeRaiz(x.raiz))}${n.municipio ? `<div class="mini">${esc(n.municipio)}</div>` : ''}</td><td class="l">${x.ufs}</td><td class="l">${x.grps.map(tit).join(', ')}</td><td>${n0(x.b25 || NaN)}</td><td class="b">${n0(x.r26)}</td><td>${vc(x.vr)}${x.parcial && isFinite(x.vr) ? '<span class="mini"> base parcial</span>' : ''}</td><td>${vc(x.tr)}</td><td>${n0(x.lojas || NaN)}</td><td class="l">${x.sc ? `<span class="tag">✓ ${x.sc.map(k => tit(k.split('|')[0])).filter((v, i, a) => a.indexOf(v) === i).join(', ')}</span>` : ''}</td></tr>`; }).join('') +
     `</tbody></table></div>${!S.ui.cltodas && lista.length > 80 ? `<div class="pager"><button data-act="ui" data-k="cltodas" data-v="1">Mostrar todas as ${n0(lista.length)} redes</button></div>` : ''}
-    <p class="note" style="margin:12px 0 0">Rede = raiz do CNPJ (8 dígitos); nome pela Receita. As 1.000 maiores redes aparecem nomeadas; o resto está em "Demais clientes". 26 contra 25 só nos distribuidores com 2025 completo no Colecta (DAC, Rio Vermelho, A.S.E. e Alvorada) (acumulado, mês sem compra conta como zero). O JC entrou em jan/26, a Troia em out/25 e a Rede Brasil tem 2025 incompleto: para eles vale a tendência dos últimos 3 meses. Lojas = soma de CNPJs por distribuidor.</p>`;
+    <p class="note" style="margin:12px 0 0">Rede = raiz do CNPJ (8 dígitos); nome pela Receita. As 1.000 maiores redes aparecem nomeadas; o resto está em "Demais clientes". 26 contra 25 só nos distribuidores com 2025 completo no Colecta (${[...BASE_COMP].map(tit).join(', ')}) (acumulado, mês sem compra conta como zero). Os distribuidores que entraram no Colecta depois de jan/25 ou têm 2025 incompleto ficam fora dessa conta: para eles vale a tendência dos últimos 3 meses. Lojas = soma de CNPJs por distribuidor.</p>`;
 }
 function detalheCol(x) {
   const n = RD.nomes[x.raiz] || {};
