@@ -173,3 +173,9 @@ footer p{margin:4px 0}
 .card h3 .vbig{font-size:19px;padding:3px 12px;margin:0 2px}
 .kpi .sub.dv{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:13.5px}
 td.q .vr{font-size:14px}
+
+/* coluna de nomes congelada: ao rolar a tabela para o lado só os números correm */
+.tw table th:first-child,.tw table td:first-child{position:sticky;left:0;z-index:2;background:var(--white);box-shadow:1px 0 0 var(--row)}
+.tw table thead th:first-child{z-index:3}
+.tw tbody tr:hover td:first-child{background:#FAFAFC}
+.tw table td:first-child,.tw table th:first-child{max-width:46vw;white-space:normal;min-width:96px}
