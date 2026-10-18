@@ -1,5 +1,6 @@
 /* Dash Geral CTO · template oficial (padrão Apple Store) */
 :root{
+  --up-ink:#1D7A34; --up-bg:#E2F3E6; --down-ink:#D70015; --down-bg:#FFE3E8;
   --paper:#F5F5F7; --white:#FFFFFF; --ink:#1D1D1F; --slate:#6E6E73; --mut:#86868B; --hair:#D2D2D7; --row:#ECECEF;
   --pink:#FF007F; --orange:#B64400; --link:#0066CC; --green:#248A3D; --amber:#B88400; --red:#D70015; --veja:#0096D6;
   --radius:18px; --gap:20px; --side:max(22px, calc((100vw - 1260px) / 2));
@@ -101,7 +102,7 @@ h2.sec span{color:var(--slate)}
 .chart{width:100%;height:auto;display:block;margin:10px 0 4px}
 .legend{display:flex;gap:16px;font-size:12px;color:var(--slate);margin-top:4px;flex-wrap:wrap}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
-.tip{position:fixed;z-index:70;pointer-events:none;background:var(--ink);color:#fff;font-size:12px;padding:7px 10px;border-radius:8px;white-space:nowrap;opacity:0;transition:opacity .12s}
+.tip{position:fixed;z-index:70;pointer-events:none;background:var(--ink);color:#fff;font-size:12px;padding:7px 10px;border-radius:8px;max-width:calc(100vw - 16px);white-space:normal;opacity:0;transition:opacity .12s}
 
 /* tabelas */
 .tw{overflow-x:auto;margin-top:12px}
@@ -155,3 +156,20 @@ footer p{margin:4px 0}
 .cofre-btn{font-size:16px;padding:13px 18px;margin-top:6px}
 .cofre-btn:disabled{opacity:.6;cursor:default}
 .cofre-msg{min-height:20px;margin:0;font-size:14px;color:var(--red)}
+
+.pager button:disabled{opacity:.35;cursor:default}
+/* iPhone: campo com menos de 16px dá zoom na página */
+@media (max-width:640px){.pop input[type=search],input.find,select,.fbar select{font-size:16px}.pop{width:calc(100vw - 16px);max-width:320px}}
+
+/* crescimento e perda em destaque */
+.vr{display:inline-block;font-weight:700;font-size:13.5px;line-height:1.3;padding:2px 9px;border-radius:999px;white-space:nowrap}
+.vr.up{color:var(--up-ink);background:var(--up-bg)}
+.vr.down{color:var(--down-ink);background:var(--down-bg)}
+.vr.flat{color:var(--slate);background:var(--paper)}
+.vbig{display:inline-flex;align-items:center;gap:4px;font-weight:700;font-size:17px;line-height:1.2;padding:4px 12px;border-radius:999px;white-space:nowrap;letter-spacing:-.01em;vertical-align:middle}
+.vbig.up{color:var(--up-ink);background:var(--up-bg)}
+.vbig.down{color:var(--down-ink);background:var(--down-bg)}
+.vbig.flat{color:var(--slate);background:var(--paper)}
+.card h3 .vbig{font-size:19px;padding:3px 12px;margin:0 2px}
+.kpi .sub.dv{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:13.5px}
+td.q .vr{font-size:14px}

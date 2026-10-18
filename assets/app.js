@@ -39,7 +39,9 @@ function lerHash() {
     const h = location.hash.slice(1); if (PAGES.some(p => p[0] === h)) S.page = h;
     return;
   }
-  const [pg, ...qs] = decodeURIComponent(location.hash.slice(1)).split('&');
+  let bruto = '';
+  try { bruto = decodeURIComponent(location.hash.slice(1)); } catch (e) { bruto = ''; try { history.replaceState(null, '', location.pathname); } catch (x) { /* sem histórico */ } }
+  const [pg, ...qs] = bruto.split('&');
   S.page = PAGES.some(p => p[0] === pg) ? pg : 'inicio';
   FILTROS.forEach(([k]) => S.f[k] = new Set());
   S.corte = D.corte;
@@ -49,7 +51,7 @@ function lerHash() {
     else if (S.f[k] && v) v.split('|').forEach(x => { const i = id(k, x); if (i >= 0) S.f[k].add(i); });
   });
 }
-function gravarHash() {
+function gravarHash(novaEntrada = false) {
   if (ART) {
     const f = {}; FILTROS.forEach(([k]) => { if (S.f[k].size) f[k] = [...S.f[k]].map(i => dic[k][i]); });
     try { localStorage.setItem(CHAVE, JSON.stringify({page: S.page, corte: S.corte, gerado: D.gerado, f})); } catch (e) { /* sem memória neste navegador */ }
@@ -58,7 +60,8 @@ function gravarHash() {
   const p = [S.page];
   FILTROS.forEach(([k]) => { if (S.f[k].size) p.push(k + '=' + [...S.f[k]].map(i => dic[k][i]).join('|')); });
   if (S.corte !== D.corte) p.push('corte=' + S.corte);
-  try { history.replaceState(null, '', '#' + p.map(encodeURIComponent).join('&').replace(/%3D/g, '=').replace(/%7C/g, '|')); } catch (e) { /* navegador sem histórico */ }
+  const url = '#' + p.map(encodeURIComponent).join('&').replace(/%3D/g, '=');
+  try { if (novaEntrada) history.pushState(null, '', url); else history.replaceState(null, '', url); } catch (e) { /* navegador sem histórico */ }
 }
 
 /* ---------- motor de cálculo ---------- */
@@ -111,8 +114,10 @@ const curto = x => !isFinite(x) ? '' : Math.abs(x) >= 1e6 ? nf1.format(x / 1e6) 
 const pc = x => (isFinite(x) ? (x > 0 ? '+' : '') + nf1.format(x * 100) + '%' : '');
 const p1 = x => (isFinite(x) ? nf1.format(x * 100) + '%' : '');
 const cls = x => (!isFinite(x) ? '' : x > 0.0005 ? 'up' : x < -0.0005 ? 'down' : '');
-const vc = x => `<span class="${cls(x)}">${pc(x)}</span>`;
+const vc = x => (isFinite(x) ? `<span class="vr ${cls(x) || 'flat'}">${pc(x)}</span>` : '');   // selo de crescimento/perda nas tabelas
+const vbig = x => (isFinite(x) ? `<span class="vbig ${cls(x) || 'flat'}">${x > 0.0005 ? '▲' : x < -0.0005 ? '▼' : '●'} ${pc(x)}</span>` : '');   // destaque nos cards e títulos
 const fmtMed = (med, x) => (med === 'rs' ? mi(x) : isFinite(x) ? nf0.format(x) : 'sem dado');
+const semAcento = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tit = s => esc(s).toLowerCase().replace(/(^|[\s(+.-])([a-zà-ú])/g, (m, a, b) => a + b.toUpperCase()).replace(/\bDf\b|\bGo\b|\bMs\b|\bMt\b|\bTo\b|\bPa\b|\bJc\b|\bDac\b|\bSto\b|\bVmu\b|\bVlp\b|\bVps\b|\bA\.s\.e\b/g, x => x.toUpperCase());
 const mkCls = m => (m === 'VEJA' ? 'mk-veja' : m === 'VANISH' ? 'mk-vanish' : '');
@@ -128,11 +133,17 @@ document.addEventListener('mouseover', e => {
 document.addEventListener('mousemove', e => {
   if (tip.style.opacity !== '1') return;
   const w = tip.offsetWidth;
-  tip.style.left = Math.min(e.clientX + 14, innerWidth - w - 8) + 'px'; tip.style.top = (e.clientY + 16) + 'px';
+  tip.style.left = Math.max(8, Math.min(e.clientX + 14, innerWidth - w - 8)) + 'px'; tip.style.top = (e.clientY + 16) + 'px';
 });
 
-function chart(a, med, alto = 250) {
-  const W = 1000, H = alto, pt = 26, pb = 28, gw = W / 12, bw = gw * 0.3;
+function larguraCard() {
+  const app = document.getElementById('app'), w = app ? app.clientWidth : 1000;
+  return w - (innerWidth < 640 ? 80 : 100);   // padding do main + padding do card
+}
+function chart(a, med, alto = 250, larg = null, rotulos = true) {
+  const W = Math.round(Math.max(240, Math.min(1180, larg || larguraCard()))), H = alto, pt = 26, gw = W / 12, bw = gw * 0.3;
+  const comValor = rotulos && gw >= 46, comVar = rotulos && gw >= 50;
+  const pb = comVar ? 50 : 28;
   let mx = 0; for (let m = 1; m <= 12; m++) for (const y of [2025, 2026]) { const x = v(a, y, m); if (x > mx) mx = x; }
   if (!mx) return '<div class="empty">Sem dado para este recorte.</div>';
   const h = x => (isFinite(x) && x > 0 ? (x / mx) * (H - pt - pb) : 0);
@@ -141,8 +152,10 @@ function chart(a, med, alto = 250) {
     const x0 = (m - 1) * gw + gw / 2, a25 = v(a, 2025, m), a26 = v(a, 2026, m), h25 = h(a25), h26 = h(a26);
     s += `<rect x="${x0 - bw - 2}" y="${H - pb - h25}" width="${bw}" height="${h25}" rx="4" fill="#D2D2D7"/>`;
     if (h26) s += `<rect x="${x0 + 2}" y="${H - pb - h26}" width="${bw}" height="${h26}" rx="4" fill="#FF007F"/>`;
-    if (h26) s += `<text class="vl" x="${x0 + 2 + bw / 2}" y="${H - pb - h26 - 7}" text-anchor="middle" font-size="13" font-weight="600" fill="#1D1D1F">${curto(a26)}</text>`;
-    s += `<text x="${x0}" y="${H - 8}" text-anchor="middle" font-size="13" fill="#6E6E73">${MESES[m - 1]}</text>`;
+    if (h26 && comValor) s += `<text class="vl" x="${x0 + 2 + bw / 2}" y="${H - pb - h26 - 7}" text-anchor="middle" font-size="12" font-weight="600" fill="#1D1D1F">${curto(a26)}</text>`;
+    s += `<text x="${x0}" y="${H - (comVar ? 30 : 8)}" text-anchor="middle" font-size="11" fill="#6E6E73">${gw >= 34 ? MESES[m - 1] : MESES[m - 1][0]}</text>`;
+    const vm = varr(a26, a25);
+    if (comVar && isFinite(vm)) s += `<text x="${x0}" y="${H - 8}" text-anchor="middle" font-size="12.5" font-weight="700" fill="${vm > 0.0005 ? '#1D7A34' : vm < -0.0005 ? '#D70015' : '#6E6E73'}">${pc(vm)}</text>`;
     const t = `<b>${MESES[m - 1]}</b> · 2025: ${med === 'rs' ? 'R$ ' : ''}${n0(a25) || 'sem dado'} · 2026: ${med === 'rs' ? 'R$ ' : ''}${n0(a26) || 'sem dado'} ${isFinite(varr(a26, a25)) ? '· ' + pc(varr(a26, a25)) : ''}`;
     s += `<rect x="${(m - 1) * gw}" y="0" width="${gw}" height="${H}" fill="transparent" data-tip="${esc(t)}"/>`;
   }
@@ -181,7 +194,7 @@ function blocoIn(bid) {
   const {rotulo, opts} = BLOCOS[bid], med = S.ui['m' + bid] || 'rs';
   const a = um(med, opts), y26 = ytd(a, 2026, med), y25 = ytd(a, 2025, med), d = varr(y26, y25);
   const frase = med === 'pdv' ? `${n0(y26)} PDVs por mês.` : med === 'rs' ? `${mi(y26)} até ${mes(S.corte)}.` : `${n0(y26)} caixas até ${mes(S.corte)}.`;
-  const resto = isFinite(d) ? ` <span>${pc(d)} sobre 2025${med === 'pdv' ? ', na média mensal' : ''}.</span>` : ' <span>Sem base de 2025 para comparar.</span>';
+  const resto = isFinite(d) ? ` ${vbig(d)} <span>sobre 2025${med === 'pdv' ? ', na média mensal' : ''}.</span>` : ' <span>Sem base de 2025 para comparar.</span>';
   return `<p class="eyebrow">${esc(rotulo)} · ${MED[med].nome}</p><h3>${frase}${resto}</h3>
     <div class="seg" data-bid="${bid}">${Object.keys(MED).map(k => `<button data-act="med" data-bid="${bid}" data-m="${k}" class="${k === med ? 'on' : ''}">${MED[k].nome}</button>`).join('')}</div>
     ${chart(a, med)}${tabelaMensal(a, med)}`;
@@ -189,13 +202,13 @@ function blocoIn(bid) {
 
 function kpis(opts, extra = true) {
   const r = um('rs', opts), c = um('cx', opts), p = um('pdv', opts);
-  const card = (lab, val, d, sub) => `<div class="card kpi"><div class="lab">${lab}</div><div class="val">${val}</div><div class="sub">${vc(d)} ${sub}</div></div>`;
+  const card = (lab, val, d, sub) => `<div class="card kpi"><div class="lab">${lab}</div><div class="val">${val}</div><div class="sub dv">${vbig(d)}<span>${sub}</span></div></div>`;
   const r26 = ytd(r, 2026, 'rs'), r25 = ytd(r, 2025, 'rs'), p26 = ytd(p, 2026, 'pdv'), p25 = ytd(p, 2025, 'pdv');
   let h = card('Sell out ' + corteTxt(), mi(r26), varr(r26, r25), `sobre ${mi(r25)} em 2025`) +
           card('Caixas ' + corteTxt(), n0(ytd(c, 2026, 'cx')), varr(ytd(c, 2026, 'cx'), ytd(c, 2025, 'cx')), 'sobre 2025') +
           card('PDVs positivados', n0(p26), varr(p26, p25), `média por mês, contra ${n0(p25)}`);
   if (extra) {
-    const t26 = r26 / S.corte / p26, t25 = r25 / S.corte / p25;
+    const t26 = r26 / agg(p, 2026, ate(S.corte), false), t25 = r25 / agg(p, 2025, ate(S.corte), false);   // R$ por PDV-mês, mesmos meses
     h += card('Ticket por PDV', 'R$ ' + n0(t26), varr(t26, t25), `por mês, contra R$ ${n0(t25)}`);
   }
   return `<div class="grid ${extra ? 'g4' : 'g3'}">${h}</div>`;
@@ -207,11 +220,11 @@ function tabelaYTD(rotulo, itens, chaveFn, opts, porMarca = false) {
   const linhas = itens.map(([k, nome, extra]) => {
     const a = R.get(k), p = P.get(k);
     const y = ANOS.map(x => (a ? agg(a, x, ate(S.corte), false) : NaN));
-    const pp = [2025, 2026].map(x => (p ? agg(p, x, ate(S.corte), false) / S.corte : NaN));
+    const pp = [2025, 2026].map(x => (p ? agg(p, x, ate(S.corte), true) : NaN));   // média dos meses com dado, igual ao card
     return {nome, extra, y, pp};
   }).filter(l => l.y.some(isFinite));
   const tot = ANOS.map((_, j) => linhas.reduce((s, l) => s + (isFinite(l.y[j]) ? l.y[j] : 0), 0));
-  const tp = [0, 1].map(j => linhas.reduce((s, l) => s + (isFinite(l.pp[j]) ? l.pp[j] : 0), 0));
+  const PT = um('pdv', opts), tp = [ytd(PT, 2025, 'pdv'), ytd(PT, 2026, 'pdv')];   // total do recorte, igual ao card
   linhas.sort((a, b) => (b.y[3] || 0) - (a.y[3] || 0));
   const row = (l, c) => `<tr class="${c || ''}"><td class="l">${l.nome}</td>${l.extra !== undefined ? `<td class="l">${l.extra}</td>` : ''}` +
     l.y.map((x, j) => `<td class="${j === 3 ? 'b' : ''}">${n0(x)}</td>`).join('') +
@@ -225,7 +238,7 @@ function tabelaYTD(rotulo, itens, chaveFn, opts, porMarca = false) {
 
 /* ---------- barra global e segmentações ---------- */
 function nav() {
-  document.getElementById('gnav').innerHTML = `<a class="brand" href="#inicio"><img src="assets/reckitt_logo.png" alt="Reckitt">Dash Geral CTO</a>` +
+  document.getElementById('gnav').innerHTML = `<a class="brand" href="#inicio" data-act="pg" data-pg="inicio"><img src="assets/reckitt_logo.png" alt="Reckitt">Dash Geral CTO</a>` +
     PAGES.map(([k, n]) => `<a class="nav ${S.page === k ? 'on' : ''}" href="#${k}" data-act="pg" data-pg="${k}">${n}</a>`).join('') +
     `<span class="upd">Atualizado em ${D.gerado.split(' ')[0]}</span>` +
     (window.DASH_COFRE ? '<a class="nav" href="#sair" data-act="sair" title="Fechar o acesso neste aparelho">Sair</a>' : '');
@@ -259,7 +272,7 @@ function abrirPop(k, btn) {
     <div class="opts">${ids.map(i => `<label class="opt"><input type="checkbox" value="${i}" ${S.f[k].has(i) ? 'checked' : ''}>${k === 'grp' || k === 'executivo' ? tit(dic[k][i]) : esc(dic[k][i])}</label>`).join('')}</div>`;
   document.body.appendChild(el);
   const r = btn.getBoundingClientRect();
-  el.style.top = (r.bottom + 8) + 'px'; el.style.left = Math.max(8, Math.min(r.left, innerWidth - 308)) + 'px';
+  el.style.top = (r.bottom + 8) + 'px'; el.style.left = Math.max(8, Math.min(r.left, innerWidth - el.offsetWidth - 8)) + 'px';
   el.addEventListener('change', e => {
     const i = +e.target.value; e.target.checked ? S.f[k].add(i) : S.f[k].delete(i);
     if (k === 'marca') { const ok = new Set(opcoes('segmento')); S.f.segmento.forEach(s => { if (!ok.has(s)) S.f.segmento.delete(s); }); }
@@ -269,7 +282,10 @@ function abrirPop(k, btn) {
     if (e.target.dataset.act === 'popclear') { S.f[k].clear(); el.querySelectorAll('input[type=checkbox]').forEach(c => (c.checked = false)); atualizar(true); }
   });
   const busca = el.querySelector('input[type=search]');
-  if (busca) { busca.focus(); busca.addEventListener('input', () => el.querySelectorAll('.opt').forEach(o => (o.style.display = o.textContent.toLowerCase().includes(busca.value.toLowerCase()) ? '' : 'none'))); }
+  if (busca) {
+    if (matchMedia('(hover: hover) and (pointer: fine)').matches) busca.focus();
+    busca.addEventListener('input', () => { const q = semAcento(busca.value); el.querySelectorAll('.opt').forEach(o => { o.hidden = !semAcento(o.textContent).includes(q); }); });
+  }
   POP = {el, k};
 }
 function fecharPop() { if (POP) { POP.el.remove(); POP = null; } }
@@ -281,22 +297,33 @@ document.addEventListener('click', e => {
   if (act === 'pop') { if (POP && POP.k === t.dataset.k) fecharPop(); else abrirPop(t.dataset.k, t); }
   else if (act === 'limpar') { FILTROS.forEach(([k]) => S.f[k].clear()); atualizar(); }
   else if (act === 'med') { S.ui['m' + t.dataset.bid] = t.dataset.m; document.getElementById('b-' + t.dataset.bid).innerHTML = blocoIn(t.dataset.bid); }
-  else if (act === 'ui') { S.ui[t.dataset.k] = t.dataset.v; render(false); }
+  else if (act === 'ui') { S.ui[t.dataset.k] = t.dataset.v; if (t.dataset.k === 'bnv') S.ui.pag = 0; render(false); }
   else if (act === 'pg') { e.preventDefault(); irPara(t.dataset.pg); }
   else if (act === 'csv') baixarCSV(t);
   else if (act === 'sair') { e.preventDefault(); try { localStorage.removeItem('dash-geral-cto-chave'); } catch (x) { /* nada guardado */ } location.replace(location.pathname); }
-  else if (act === 'pag') { S.ui.pag = Math.max(0, (S.ui.pag || 0) + +t.dataset.d); render(false); }
+  else if (act === 'pag') { const np = Math.max(1, Math.ceil(linhasBase().length / 50)); S.ui.pag = Math.min(np - 1, Math.max(0, (S.ui.pag || 0) + +t.dataset.d)); render(false); }
   else if (act === 'sort') { const k = 'sort' + t.dataset.t; S.ui[k] = S.ui[k] === t.dataset.c ? '-' + t.dataset.c : t.dataset.c; render(false); }
 });
 document.addEventListener('change', e => {
   if (e.target.dataset.act === 'corte') { S.corte = +e.target.value; atualizar(); }
 });
-function irPara(pg) { S.page = pg; S.ui.pag = 0; gravarHash(); render(); scrollTo({top: 0}); }
+function irPara(pg) { const mudou = pg !== S.page; S.page = pg; S.ui.pag = 0; gravarHash(mudou); render(); scrollTo({top: 0}); }
 function atualizar(manterPop) {
-  filtrar(); gravarHash(); fbar(); render(false);
+  S.ui.pag = 0; filtrar(); gravarHash(); fbar(); render(false);
   if (manterPop && POP) { const btn = document.querySelector(`.chip[data-k="${POP.k}"]`); if (btn) { const r = btn.getBoundingClientRect(); POP.el.style.top = (r.bottom + 8) + 'px'; } }
 }
-addEventListener('hashchange', () => { lerHash(); filtrar(); fbar(); render(); });
+// voltar/avançar do navegador e links colados: relê o endereço
+let ULTIMO = location.hash;
+function doEndereco() {
+  if (ART || location.hash === ULTIMO) return;
+  ULTIMO = location.hash; const antes = S.page;
+  lerHash(); filtrar(); fbar(); render(); if (S.page !== antes) scrollTo({top: 0});
+}
+addEventListener('hashchange', doEndereco);
+addEventListener('popstate', doEndereco);
+// gráficos acompanham a largura da tela
+let LARG = innerWidth, tRz = null;
+addEventListener('resize', () => { clearTimeout(tRz); tRz = setTimeout(() => { if (Math.abs(innerWidth - LARG) > 60) { LARG = innerWidth; render(false); } }, 200); });
 
 /* ---------- páginas (mesma ordem das abas do Dash Power Query) ---------- */
 function hero(eyebrow, t1, t2, side = '') {
@@ -327,7 +354,7 @@ function pgInicio() {
     const y26 = ytd(a, 2026, 'rs'), y25 = ytd(a, 2025, 'rs');
     const pg = MARCA_PAG[m.toLowerCase()] ? m.toLowerCase() : 'hn';
     return `<a class="card" href="#${pg}" data-act="pg" data-pg="${pg}"><p class="eyebrow ${mkCls(m)}">${tit(m)}</p><div class="kpi"><div class="val" style="font-size:30px">${mi(y26)}</div>
-      <div class="sub">${vc(varr(y26, y25))} sobre 2025</div></div>${chart(a, 'rs', 150).replace(/<div class="legend">.*<\/div>$/, '')}</a>`;
+      <div class="sub">${vc(varr(y26, y25))} sobre 2025</div></div>${chart(a, 'rs', 120, 244, false).replace(/<div class="legend">.*<\/div>$/, '')}</a>`;
   }).join('') + '</div>';
   // prateleira de distribuidores
   const G = cubo('rs', {...op, chave: r => r[COL.grp]});
@@ -366,10 +393,10 @@ function pgGeral() {
   const r = um('rs', op), c = um('cx', op), p = um('pdv', op);
   const div = (a, b) => { const o = new Float64Array(48).fill(NaN); for (let i = 0; i < 48; i++) o[i] = a[i] / b[i]; return o; };
   const tk = div(r, p), rc = div(r, c);
-  const mini = (a, t, sub) => `<div class="card"><p class="eyebrow">${t}</p><h3>R$ ${n2(agg(a, 2026, ate(S.corte), true))} em média. <span>${sub}</span></h3><div class="tw"><table><thead><tr><th>Mês</th>${ANOS.map(y => `<th>${y}</th>`).join('')}<th>26 vs 25</th></tr></thead><tbody>` +
+  const mini = (a, den, t, sub) => `<div class="card"><p class="eyebrow">${t}</p><h3>R$ ${n2(agg(r, 2026, ate(S.corte), false) / agg(den, 2026, ate(S.corte), false))} no acumulado. <span>${sub}</span></h3><div class="tw"><table><thead><tr><th>Mês</th>${ANOS.map(y => `<th>${y}</th>`).join('')}<th>26 vs 25</th></tr></thead><tbody>` +
     ate(12).map(m => `<tr><td class="b">${MESES[m - 1]}</td>${ANOS.map(y => `<td class="${y === 2026 ? 'b' : ''}">${n2(v(a, y, m))}</td>`).join('')}<td>${vc(varr(v(a, 2026, m), v(a, 2025, m)))}</td></tr>`).join('') + '</tbody></table></div></div>';
   h += `<h2 class="sec">Ticket e R$ por caixa. <span>Quanto cada PDV compra e quanto vale cada caixa.</span></h2><div class="grid g2">` +
-    mini(tk, 'Ticket médio · R$ por PDV', 'Por PDV positivado no mês.') + mini(rc, 'R$ por caixa', 'Caixas não comparam entre ferramentas.') + '</div>';
+    mini(tk, p, 'Ticket médio · R$ por PDV', 'Por PDV positivado no mês.') + mini(rc, c, 'R$ por caixa', 'Caixas não comparam entre ferramentas.') + '</div>';
   const MK = dic.marca.map((m, i) => [i, tit(m)]).filter(([i]) => i !== TODAS);
   h += `<h2 class="sec">Marca a marca. <span>Acumulado de ${corteTxt()}.</span></h2><div class="card">` + tabelaYTD('Marca', MK, r => r[COL.marca], op, true) + '</div>';
   const UFS = ['DF','GO','MS','MT','TO','PA'].map(u => [id('uf', u), u]);
@@ -390,16 +417,17 @@ function secaoMarca(chave, rotulo, nomes) {
   // matriz segmento x mês
   const med = S.ui['mat' + chave] || 'rs';
   const segs = segsDaMarca(nomes).filter(s => !segsG || segsG.has(s));
-  const C = cubo(med, {marcas: mk, segs: segsG, chave: r => r[COL.segmento]});
+  const C = cubo(med, {marcas: mk, segs: segsG || new Set(segsDaMarca(nomes)), chave: r => r[COL.segmento]});   // matriz sempre no nível segmento
   const L = segs.map(s => ({s, a: C.get(s)})).filter(x => x.a).map(x => ({...x, y25: ytd(x.a, 2025, med), y26: ytd(x.a, 2026, med)})).sort((a, b) => (b.y26 || 0) - (a.y26 || 0));
-  if (!L.length) return h + '<div class="card empty">Sem segmento para este recorte.</div>';
+  const botoesMat = `<div class="seg">${Object.keys(MED).map(k => `<button data-act="ui" data-k="mat${chave}" data-v="${k}" class="${k === med ? 'on' : ''}">${MED[k].nome}</button>`).join('')}</div>`;
+  if (!L.length) return h + `<div class="card">${botoesMat}<div class="empty">Sem segmento para este recorte.</div></div>`;
   const tot = new Float64Array(48).fill(NaN);
   L.forEach(x => x.a.forEach((val, i) => { if (!isNaN(val)) tot[i] = (isNaN(tot[i]) ? 0 : tot[i]) + val; }));
   const T = {s: -1, a: tot, y25: ytd(tot, 2025, med), y26: ytd(tot, 2026, med)};
   const media = MED[med].media, nomeS = s => (s < 0 ? 'Total' : tit(dic.segmento[s]));
   const meses = [...ate(12).map(m => [2025, m]), ...ate(12).map(m => [2026, m])];
   h += `<h2 class="sec">Segmentos mês a mês. <span>${med === 'pdv' ? 'PDVs somam segmentos (o mesmo PDV aparece em mais de um).' : 'Peso de cada segmento no acumulado de 2026.'}</span></h2><div class="card">
-    <div class="seg">${Object.keys(MED).map(k => `<button data-act="ui" data-k="mat${chave}" data-v="${k}" class="${k === med ? 'on' : ''}">${MED[k].nome}</button>`).join('')}</div>
+    ${botoesMat}
     <div class="tw"><table><thead><tr><th>Segmento</th>${meses.map(([y, m]) => `<th>${MESES[m - 1]}/${String(y).slice(2)}</th>`).join('')}<th>${media ? 'Média' : 'YTD'} 25</th><th>${media ? 'Média' : 'YTD'} 26</th><th>26 vs 25</th>${media ? '' : '<th>Peso 26</th>'}</tr></thead><tbody>` +
     [...L, T].map(x => `<tr class="${x.s < 0 ? 'tot' : ''}"><td class="b">${nomeS(x.s)}</td>${meses.map(([y, m]) => `<td class="${y === 2026 ? 'b' : ''}">${n0(v(x.a, y, m))}</td>`).join('')}
       <td>${n0(x.y25)}</td><td class="b">${n0(x.y26)}</td><td>${vc(varr(x.y26, x.y25))}</td>${media ? '' : `<td>${p1(x.y26 / T.y26)}</td>`}</tr>`).join('') + '</tbody></table></div>';
@@ -461,28 +489,49 @@ function pgRoberta() {
     <p class="note" style="margin:12px 0 0">Clique no nome da coluna para ordenar pelo valor de 2026. As colunas de marca respeitam o filtro de segmento; Total R$ e Caixas respeitam marca e segmento.</p></div>`;
 }
 
-function pgConfronto() {
-  const nivel = S.ui.cnv || 'TOTAL', busca = (S.ui.cbusca || '').toLowerCase();
-  const uf = S.f.uf.size ? new Set([...S.f.uf].map(i => dic.uf[i])) : null, gr = S.f.grp.size ? new Set([...S.f.grp].map(i => dic.grp[i])) : null;
-  const mk = S.f.marca.size ? new Set([...S.f.marca].map(i => dic.marca[i])) : null;
-  const L = D.confronto.filter(x => {
-    const nv = x.marca === '(TODAS AS MARCAS)' ? 'TOTAL' : x.segmento === '(TODOS OS SEGMENTOS)' ? 'MARCA' : 'SEGMENTO';
-    return nv === nivel && (!uf || uf.has(x.uf)) && (!gr || gr.has(x.grp)) && (!mk || nv === 'TOTAL' || mk.has(x.marca)) &&
-      (!busca || (x.grp + ' ' + x.marca + ' ' + x.segmento).toLowerCase().includes(busca));
+let GRP_INFO = null;
+function grpInfo() {   // recorte, executivo e canal de cada distribuidor, para filtrar o confronto
+  if (GRP_INFO) return GRP_INFO;
+  GRP_INFO = {};
+  D.rows.forEach(r => {
+    const g = dic.grp[r[COL.grp]], x = GRP_INFO[g] || (GRP_INFO[g] = {recorte: new Set(), executivo: new Set(), canal: new Set()});
+    x.recorte.add(r[COL.recorte]); x.executivo.add(r[COL.executivo]); x.canal.add(r[COL.canal]);
   });
-  const leit = x => { if (x.mx_rs <= 0) return ['Só no Colecta', 'warn']; const q = x.co_rs / x.mx_rs; return q >= 0.95 && q <= 1.05 ? ['Bate (±5%)', 'up'] : q > 1.05 ? ['Colecta mede mais', 'warn'] : ['Colecta mede menos', 'down']; };
-  const bate = L.filter(x => leit(x)[0].startsWith('Bate')).length;
-  return hero('Confronto de fontes', 'MTRIX x Colecta.', 'Mesmos meses, mesmo distribuidor. Razão perto de 1,00 = as duas medem igual.') +
-    `<div class="grid g3"><div class="card kpi"><div class="lab">Comparações</div><div class="val">${n0(L.length)}</div><div class="sub">no nível ${nivel.toLowerCase()}</div></div>
-     <div class="card kpi"><div class="lab">Batem em ±5%</div><div class="val">${n0(bate)}</div><div class="sub">${p1(bate / L.length)} das comparações</div></div>
+  return GRP_INFO;
+}
+function confLinhas() {
+  const nivel = S.ui.cnv || 'TOTAL', busca = semAcento(S.ui.cbusca || ''), G = grpInfo();
+  const nomes = k => (S.f[k].size ? new Set([...S.f[k]].map(i => dic[k][i])) : null);
+  const uf = nomes('uf'), gr = nomes('grp'), mk = nomes('marca'), sg = nomes('segmento');
+  const porGrp = ['recorte', 'executivo', 'canal'].filter(k => S.f[k].size);
+  return D.confronto.filter(x => {
+    const nv = x.marca === '(TODAS AS MARCAS)' ? 'TOTAL' : x.segmento === '(TODOS OS SEGMENTOS)' ? 'MARCA' : 'SEGMENTO';
+    const info = G[x.grp];
+    return nv === nivel && (!uf || uf.has(x.uf)) && (!gr || gr.has(x.grp)) && (!mk || nv === 'TOTAL' || mk.has(x.marca)) &&
+      (!sg || nv !== 'SEGMENTO' || sg.has(x.segmento)) &&
+      porGrp.every(k => info && [...S.f[k]].some(i => info[k].has(i))) &&
+      (!busca || semAcento(x.grp + ' ' + x.marca + ' ' + x.segmento).includes(busca));
+  });
+}
+const leitConf = x => { if (x.mx_rs <= 0) return ['Só no Colecta', 'warn']; const q = x.co_rs / x.mx_rs; return q >= 0.95 && q <= 1.05 ? ['Bate (±5%)', 'up'] : q > 1.05 ? ['Colecta mede mais', 'warn'] : ['Colecta mede menos', 'down']; };
+function confRes() {
+  const nivel = S.ui.cnv || 'TOTAL', L = confLinhas(), bate = L.filter(x => leitConf(x)[0].startsWith('Bate')).length;
+  return `<div class="grid g3"><div class="card kpi"><div class="lab">Comparações</div><div class="val">${n0(L.length)}</div><div class="sub">no nível ${nivel.toLowerCase()}</div></div>
+     <div class="card kpi"><div class="lab">Batem em ±5%</div><div class="val">${n0(bate)}</div><div class="sub">${L.length ? p1(bate / L.length) + ' das comparações' : 'nada neste recorte'}</div></div>
      <div class="card kpi"><div class="lab">Regra adotada</div><div class="val" style="font-size:22px;line-height:1.3">Colecta é o padrão</div><div class="sub">MTRIX onde o Colecta não tem o dado</div></div></div>
-    <div class="card"><div class="pills">${['TOTAL','MARCA','SEGMENTO'].map(n => `<button data-act="ui" data-k="cnv" data-v="${n}" class="${n === nivel ? 'on' : ''}">${tit(n)}</button>`).join('')}
-      <input class="find" id="cbusca" type="search" placeholder="Buscar distribuidor, marca ou segmento" value="${esc(S.ui.cbusca || '')}"></div>
-    <div class="tw"><table><thead><tr><th class="l">UF</th><th class="l">Grp. econômico</th><th class="l">Período</th><th>Meses</th><th class="l">Marca</th><th class="l">Segmento</th>
+    <div class="card"><div class="tw"><table><thead><tr><th class="l">UF</th><th class="l">Grp. econômico</th><th class="l">Período</th><th>Meses</th><th class="l">Marca</th><th class="l">Segmento</th>
       <th>R$ MTRIX</th><th>R$ Colecta</th><th>Colecta / MTRIX</th><th>PDVs/mês MTRIX</th><th>PDVs/mês Colecta</th><th>Colecta / MTRIX</th><th class="l">Leitura</th><th class="l">Fonte adotada</th></tr></thead><tbody>` +
-    (L.map(x => { const [t, c] = leit(x); return `<tr><td class="l">${x.uf}</td><td class="l b">${tit(x.grp)}</td><td class="l">${x.periodo}</td><td>${x.meses}</td><td class="l ${mkCls(x.marca)}">${tit(x.marca)}</td><td class="l">${tit(x.segmento)}</td>
+    (L.map(x => { const [t, c] = leitConf(x); return `<tr><td class="l">${x.uf}</td><td class="l b">${tit(x.grp)}</td><td class="l">${x.periodo}</td><td>${x.meses}</td><td class="l ${mkCls(x.marca)}">${tit(x.marca)}</td><td class="l">${tit(x.segmento)}</td>
       <td>${n0(x.mx_rs)}</td><td>${n0(x.co_rs)}</td><td class="b">${x.mx_rs ? n2(x.co_rs / x.mx_rs) : ''}</td><td>${n0(x.mx_pdv)}</td><td>${n0(x.co_pdv)}</td><td>${x.mx_pdv ? n2(x.co_pdv / x.mx_pdv) : ''}</td>
       <td class="l ${c}">${t}</td><td class="l">${esc(x.adotada)}</td></tr>`; }).join('') || '<tr><td colspan="14" class="empty">Nada neste recorte.</td></tr>') + '</tbody></table></div></div>';
+}
+function pgConfronto() {
+  const nivel = S.ui.cnv || 'TOTAL';
+  const fora = (S.f.fonte.size || S.f.janela.size) ? '<p class="note">Fonte e Comparabilidade não se aplicam aqui: o confronto já compara as duas fontes nos mesmos meses.</p>' : '';
+  return hero('Confronto de fontes', 'MTRIX x Colecta.', 'Mesmos meses, mesmo distribuidor. Razão perto de 1,00 = as duas medem igual.') + recorteTxt() + fora +
+    `<div class="pills" style="margin-bottom:16px">${['TOTAL','MARCA','SEGMENTO'].map(n => `<button data-act="ui" data-k="cnv" data-v="${n}" class="${n === nivel ? 'on' : ''}">${tit(n)}</button>`).join('')}
+      <input class="find" id="cbusca" type="search" placeholder="Buscar distribuidor, marca ou segmento" value="${esc(S.ui.cbusca || '')}" aria-label="Buscar no confronto"></div>
+    <div id="conf-res">${confRes()}</div>`;
 }
 
 function pgDepara() {
@@ -502,14 +551,14 @@ const CAB = ['AnoMes','Ano','Mês','Recorte','UF','Grp. Econômico','Executivo d
 const celulas = r => [r[0] * 100 + r[1], r[0], MESES[r[1] - 1], ...['recorte','uf','grp','executivo','canal','fonte','janela','nivel','marca','segmento'].map(k => dic[k][r[COL[k]]]), r[RS], r[CX], r[PDV]];
 function pgBase() {
   const L = linhasBase().slice().sort((a, b) => b[0] * 100 + b[1] - (a[0] * 100 + a[1])), pg = S.ui.pag || 0, por = 50, np = Math.max(1, Math.ceil(L.length / por));
-  const p = Math.min(pg, np - 1);
+  const p = Math.min(pg, np - 1); S.ui.pag = p;
   return hero('Base geral', 'A base que alimenta tudo.', `${n0(L.length)} linhas no recorte atual. As segmentações filtram aqui também.`) +
     `<div class="card"><div class="pills">${['TOTAL','MARCA','SEGMENTO','TODOS'].map(n => `<button data-act="ui" data-k="bnv" data-v="${n}" class="${n === (S.ui.bnv || 'TOTAL') ? 'on' : ''}">Nível ${tit(n)}</button>`).join('')}
     <button class="btn dark" data-act="csv" style="margin-left:auto">${ART ? 'Copiar o recorte para o Excel' : 'Baixar CSV do recorte'}</button></div>
     ${ART ? '<textarea id="csvbox" class="csvbox" hidden readonly aria-label="Recorte em texto para copiar"></textarea>' : ''}
     <div class="tw"><table><thead><tr>${CAB.map((c, i) => `<th class="${i > 2 && i < 13 ? 'l' : ''}">${c}</th>`).join('')}</tr></thead><tbody>` +
     L.slice(p * por, p * por + por).map(r => `<tr>${celulas(r).map((c, i) => `<td class="${i > 2 && i < 13 ? 'l' : ''}">${i >= 13 ? n0(c) : esc(c)}</td>`).join('')}</tr>`).join('') +
-    `</tbody></table></div><div class="pager"><button data-act="pag" data-d="-1">‹ Anterior</button>Página ${p + 1} de ${np}<button data-act="pag" data-d="1">Próxima ›</button></div></div>`;
+    `</tbody></table></div><div class="pager"><button data-act="pag" data-d="-1" ${p === 0 ? 'disabled' : ''}>‹ Anterior</button>Página ${p + 1} de ${np}<button data-act="pag" data-d="1" ${p >= np - 1 ? 'disabled' : ''}>Próxima ›</button></div></div>`;
 }
 function baixarCSV(btn) {
   const L = linhasBase();
@@ -529,13 +578,23 @@ function baixarCSV(btn) {
 function render(topo = true) {
   nav();
   const y = scrollY;
+  const lados = [...document.querySelectorAll('#app .shelf, #app .tw')].map(x => x.scrollLeft);
   const P = {inicio: pgInicio, geral: pgGeral, hn: pgHN, roberta: pgRoberta, confronto: pgConfronto, depara: pgDepara, base: pgBase};
   const app = document.getElementById('app');
   app.innerHTML = (P[S.page] || (() => pgMarca(S.page)))();
   document.title = (S.page === 'inicio' ? '' : PAGES.find(p => p[0] === S.page)[1] + ' · ') + 'Dash Geral CTO';
   const cb = document.getElementById('cbusca');
-  if (cb) cb.addEventListener('input', () => { S.ui.cbusca = cb.value; const pos = cb.selectionStart; render(false); const n = document.getElementById('cbusca'); n.focus(); n.setSelectionRange(pos, pos); });
-  if (!topo) scrollTo({top: y});
+  if (cb) {
+    let tB = null;
+    const aplica = () => { clearTimeout(tB); tB = setTimeout(() => { S.ui.cbusca = cb.value; document.getElementById('conf-res').innerHTML = confRes(); }, 150); };
+    cb.addEventListener('input', e => { if (!e.isComposing) aplica(); });
+    cb.addEventListener('compositionend', aplica);
+  }
+  if (!topo) {
+    scrollTo({top: y});
+    const novos = document.querySelectorAll('#app .shelf, #app .tw');
+    if (novos.length === lados.length) novos.forEach((x, i) => { x.scrollLeft = lados[i]; });
+  }
 }
 
 const rod = document.getElementById('rodape');
