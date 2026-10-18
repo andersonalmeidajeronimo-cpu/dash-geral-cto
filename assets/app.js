@@ -17,7 +17,7 @@ const FILTROS = [['recorte','Recorte'],['uf','UF'],['grp','Grp. Econômico'],['e
                  ['fonte','Fonte'],['janela','Comparabilidade'],['marca','Marca'],['segmento','Segmento']];
 const PAGES = [
   ['inicio','Início'], ['geral','Dados gerais'], ['veja','Veja'], ['vanish','Vanish'], ['harpic','Harpic'], ['finish','Finish'],
-  ['hn','H&N'], ['roberta','Visão Roberta'], ['confronto','Confronto de fontes'], ['depara','De-para'], ['base','Base geral']];
+  ['hn','H&N'], ['diretor','Visão do Diretor'], ['confronto','Confronto de fontes'], ['depara','De-para'], ['base','Base geral']];
 const MARCA_PAG = {veja: ['VEJA'], vanish: ['VANISH'], harpic: ['HARPIC'], finish: ['FINISH']};
 const HN = [['SUSTAGEN', ['SUSTAGEN']], ['BEM ESTAR SEXUAL (JONTEX + OLLA)', ['JONTEX','OLLA']], ['VEET', ['VEET']]];
 
@@ -371,7 +371,7 @@ function pgInicio() {
     ['harpic','Harpic','Visão marca e segmentos: Pedra, Pastilha, Caixa Acoplada, Líquido, Fresh Power 6, Bloco e Click Gel.'],
     ['finish','Finish','Visão marca e segmentos: Pó, Secante e Tabletes.'],
     ['hn','H&N','Health & Nutrition: Sustagen, Bem Estar Sexual (Jontex + Olla) e Veet.'],
-    ['roberta','Visão Roberta','A antiga Visão Sônia: distribuidor x marca x ano.'],
+    ['diretor','Visão do Diretor','Distribuidor x marca x ano, no acumulado.'],
     ['confronto','Confronto de fontes','MTRIX x Colecta nos mesmos meses, distribuidor, marca e segmento.'],
     ['depara','De-para','Hierarquia, fonte por período e a régua única de segmentos.'],
     ['base','Base geral','A base longa que alimenta tudo, filtrada pelas segmentações, com download em CSV.']];
@@ -464,7 +464,7 @@ function pgHN() {
   return h + secaoMarca('hn' + (S.ui.hn || 0), rot, mks);
 }
 
-function pgRoberta() {
+function pgDiretor() {
   const segs = gSegs(), MK = ['VEJA','VANISH','HARPIC','FINISH'];
   const R = cubo('rs', {segs, chave: r => r[COL.grp] + '|' + r[COL.marca]});
   const RT = cubo('rs', {marcas: gMarcas(), segs, chave: r => r[COL.grp]}), CT = cubo('cx', {marcas: gMarcas(), segs, chave: r => r[COL.grp]});
@@ -482,7 +482,7 @@ function pgRoberta() {
   linhas.sort((a, b) => ((b.cols[j][1] || 0) - (a.cols[j][1] || 0)) * (desc ? 1 : -1));
   const heads = [...MK.map(tit), 'Total R$', 'Caixas'];
   const row = (l, c) => `<tr class="${c || ''}"><td class="l b">${l.nome}</td><td class="l">${l.uf}</td>` + l.cols.map(([a, b]) => `<td>${n0(a)}</td><td class="b">${n0(b)}</td><td>${vc(varr(b, a))}</td>`).join('') + '</tr>';
-  return hero('Visão Roberta', 'Distribuidor x marca.', `Acumulado de ${corteTxt()}, 2025 contra 2026. A antiga Visão Sônia.`) + recorteTxt() +
+  return hero('Visão do Diretor', 'Distribuidor x marca.', `Acumulado de ${corteTxt()}, 2025 contra 2026.`) + recorteTxt() +
     `<div class="card"><div class="tw"><table><thead><tr><th class="l">Grp. econômico</th><th class="l">UF</th>` +
     heads.map((hh, i) => `<th class="sort" data-act="sort" data-t="rob" data-c="${i}" colspan="3" style="text-align:center">${hh} ${Math.abs(+sk) === i ? (desc ? '↓' : '↑') : ''}</th>`).join('') +
     `</tr><tr><th></th><th></th>${heads.map(() => '<th>2025</th><th>2026</th><th>Var.</th>').join('')}</tr></thead><tbody>${linhas.map(l => row(l)).join('')}${row(tot, 'tot')}</tbody></table></div>
@@ -579,7 +579,7 @@ function render(topo = true) {
   nav();
   const y = scrollY;
   const lados = [...document.querySelectorAll('#app .shelf, #app .tw')].map(x => x.scrollLeft);
-  const P = {inicio: pgInicio, geral: pgGeral, hn: pgHN, roberta: pgRoberta, confronto: pgConfronto, depara: pgDepara, base: pgBase};
+  const P = {inicio: pgInicio, geral: pgGeral, hn: pgHN, diretor: pgDiretor, confronto: pgConfronto, depara: pgDepara, base: pgBase};
   const app = document.getElementById('app');
   app.innerHTML = (P[S.page] || (() => pgMarca(S.page)))();
   document.title = (S.page === 'inicio' ? '' : PAGES.find(p => p[0] === S.page)[1] + ' · ') + 'Dash Geral CTO';

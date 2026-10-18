@@ -3,6 +3,7 @@
    "Lembrar neste aparelho" guarda só a chave derivada, nunca a senha. */
 (() => {
 const C = window.DASH_COFRE, GUARDA = 'dash-geral-cto-chave';
+const VER = ((document.currentScript && document.currentScript.src) || '').split('?v=')[1] || '';   // mesma versão do index para o app.js
 const el = id => document.getElementById(id);
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 
@@ -19,7 +20,7 @@ async function derivar(senha) {
 function iniciar() {
   el('cofre').remove();
   document.body.classList.remove('trancado');
-  const s = document.createElement('script'); s.src = 'assets/app.js'; document.body.appendChild(s);
+  const s = document.createElement('script'); s.src = 'assets/app.js' + (VER && VER !== '__V__' ? '?v=' + VER : ''); document.body.appendChild(s);
 }
 function mostrar(msg) {
   el('cofre').hidden = false;
