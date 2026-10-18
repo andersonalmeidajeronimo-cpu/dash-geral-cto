@@ -1,0 +1,6 @@
+data/data.js
+_artifact/
+*.py
+*.sh
+senha_sal.txt
+__pycache__/
