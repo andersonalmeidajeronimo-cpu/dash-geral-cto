@@ -193,3 +193,23 @@ td.q .vr{font-size:14px}
 .mini{font-size:11.5px;color:var(--slate);font-weight:400}
 tr.clk{cursor:pointer}
 tr.clk:hover td{background:#F2F2F5}
+/* Governança CTO · perna Sell In */
+.modo{display:inline-flex;background:var(--white);border-radius:999px;padding:3px;gap:2px;margin-right:12px;flex:0 0 auto}
+.modo button{border:0;background:transparent;font-family:inherit;font-size:12.5px;font-weight:600;padding:5px 12px;border-radius:999px;cursor:pointer;color:var(--slate);white-space:nowrap}
+.modo button.on{background:var(--ink);color:#fff}
+.chip.xls{color:var(--link);font-weight:600}
+.chip.xls:disabled{opacity:.6;cursor:progress}
+td.pl,.pl{color:var(--slate)}
+small.pl{font-size:11px;font-weight:600}
+button.lnk{border:0;background:none;padding:0;font:inherit;font-weight:600;color:var(--ink);cursor:pointer;text-align:left;white-space:nowrap}
+button.lnk:hover{color:var(--link);text-decoration:underline}
+tr.on td:first-child{box-shadow:inset 3px 0 0 var(--pink),1px 0 0 var(--row)}
+.spark{display:block;margin-left:auto}
+.shelf .spark{margin:10px 0 0}
+.barra{height:10px;border-radius:999px;background:var(--row);overflow:hidden;min-width:140px}
+.barra i{display:block;height:100%;background:var(--slate);border-radius:999px}
+.barra i.pk{background:var(--pink)}
+.barra.lg{height:14px;margin-top:14px}
+.vr.warn{color:#8A6100;background:#FFF1CC}
+@media (max-width:640px){.modo{margin-right:6px}.modo button{padding:5px 9px}}
+@media (min-width:900px){.tw table td:first-child,.tw table th:first-child{min-width:170px}}

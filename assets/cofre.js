@@ -1,4 +1,4 @@
-/* Tela de senha do Dash Geral CTO. Os dados chegam criptografados (data/data.enc.js, AES-256-GCM);
+/* Tela de senha da Governança CTO (antigo Dash Geral CTO; chaves de memória mantidas para não derrubar quem já entrou). Os dados chegam criptografados (data/data.enc.js, AES-256-GCM);
    a senha deriva a chave no próprio navegador (PBKDF2-SHA256) e nada sai do aparelho.
    "Lembrar neste aparelho" guarda só a chave derivada, nunca a senha. */
 (() => {
