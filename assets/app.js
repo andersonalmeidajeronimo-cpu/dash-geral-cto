@@ -343,12 +343,27 @@ function tabelaYTD(rotulo, itens, chaveFn, opts, porMarca = false) {
     ${linhas.map(l => row(l)).join('')}${row({nome: 'Total', extra: temExtra ? '' : undefined, y: tot, pp: tp, q4: [soma(l => l.q4[0]), soma(l => l.q4[1])]}, 'tot')}</tbody></table></div>`;
 }
 
+/* ---------- selo de validade: avisa o time quando o dado está velho (mesma régua da pasta de chegada) ---------- */
+function validade() {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  if (MODO === 'si') {
+    if (!D.om) return null;
+    const o = D.om.data, d = new Date(+o.slice(0, 4), +o.slice(4, 6) - 1, +o.slice(6, 8)), dias = Math.round((hoje - d) / 864e5), dw = hoje.getDay();
+    const velho = dias >= 4 || (dias > 0 && dw >= 1 && dw <= 5 && (dw === 1 || dw === 4 || hoje.getDate() >= 20));
+    return {velho, txt: `Pedidos de ${o.slice(6, 8)}/${o.slice(4, 6)}${dias > 0 ? ` · há ${dias} dia${dias > 1 ? 's' : ''}` : ' · hoje'}`};
+  }
+  let a = hoje.getFullYear(), m = hoje.getMonth() + 1 - (hoje.getDate() >= 8 ? 1 : 2); if (m <= 0) { m += 12; a--; }   // último mês fechado que o site precisa ter
+  const velho = 2026 < a || (2026 === a && D.ult26 < m);
+  return {velho, txt: `Sell out até ${mes(D.ult26)}/26${velho ? ` · falta ${mes(m)}/${String(a).slice(2)}` : ''}`};
+}
+const seloValidade = () => { const x = validade(); return x ? `<span class="selo ${x.velho ? 'warn' : 'ok'}" title="${x.velho ? 'Dado desatualizado: veja o lembrete da Governança CTO' : 'Dado em dia'}">${esc(x.txt)}</span>` : ''; };
+
 /* ---------- barra global e segmentações ---------- */
 function nav() {
   document.getElementById('gnav').innerHTML = `<a class="brand" href="#${T('inicio', 'si-inicio')}" data-act="pg" data-pg="${T('inicio', 'si-inicio')}"><img src="assets/reckitt_logo.png" alt="Reckitt">Governança CTO</a>` +
     (DSI ? `<span class="modo" role="tablist" aria-label="Perna"><button data-act="modo" data-m="so" class="${MODO === 'so' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'so'}">Sell Out</button><button data-act="modo" data-m="si" class="${MODO === 'si' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'si'}">Sell In</button></span>` : '') +
     PAGES.map(([k, n]) => `<a class="nav ${S.page === k ? 'on' : ''}" href="#${k}" data-act="pg" data-pg="${k}">${n}</a>`).join('') +
-    `<span class="upd">Atualizado em ${D.gerado.split(' ')[0]}</span>` +
+    `<span class="upd">${seloValidade()}Atualizado em ${D.gerado.split(' ')[0]}</span>` +
     (window.DASH_COFRE ? '<a class="nav" href="#sair" data-act="sair" title="Fechar o acesso neste aparelho">Sair</a>' : '');
 }
 function opcoes(k) {
@@ -1255,7 +1270,9 @@ function pgSiQ4() {
 /* ----- Mês em curso (Order Management, todas as BUs, cada uma contra o seu AR) ----- */
 function pgSiMes() {
   const op = {marcas: gMarcas(), segs: gSegs()}, M = omMes();
-  let h = hero('Mês em curso', `${isFinite(M) ? MES_LONGO[M - 1][0].toUpperCase() + MES_LONGO[M - 1].slice(1) + ' de 2026' : 'O mês'} no Order Management.`, `Faturado (GIT), carteira, processo de alocação e carteira futura até ${omData()}. NR estimado pelo NR por caixa do segmento no P&L.`) + recorteTxt() + notaL4();
+  const vd = validade();
+  let h = hero('Mês em curso', `${isFinite(M) ? MES_LONGO[M - 1][0].toUpperCase() + MES_LONGO[M - 1].slice(1) + ' de 2026' : 'O mês'} no Order Management.`, `Faturado (GIT), carteira, processo de alocação e carteira futura até ${omData()}. NR estimado pelo NR por caixa do segmento no P&L.`) + recorteTxt() + notaL4() +
+    (vd && vd.velho ? `<p class="note"><span class="selo warn">${esc(vd.txt)}</span> Os pedidos estão desatualizados: o próximo export do Order Management republica o site sozinho.</p>` : '');
   if (!D.om) return h + '<div class="card"><div class="empty">Sem Order Management nesta versão.</div></div>';
   const t = om1(op), pa = umP('rs', op), arm = isFinite(M) ? v(pa, 2026, M) : NaN, ped = t.nfat + t.ncart;
   const card = (lab, val, sub) => `<div class="card kpi"><div class="lab">${lab}</div><div class="val">${val}</div><div class="sub dv">${sub}</div></div>`;
