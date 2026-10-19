@@ -344,12 +344,16 @@ function tabelaYTD(rotulo, itens, chaveFn, opts, porMarca = false) {
 }
 
 /* ---------- selo de validade: avisa o time quando o dado está velho (mesma régua da pasta de chegada) ---------- */
+const FERIADOS = new Set(['2026-11-02', '2026-11-15', '2026-11-20', '2026-12-25', '2027-01-01', '2027-02-08', '2027-02-09', '2027-03-26', '2027-04-21',
+  '2027-05-01', '2027-05-27', '2027-09-07', '2027-10-12', '2027-11-02', '2027-11-15', '2027-11-20', '2027-12-25']);   // igual ao chegada.py
 function validade() {
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   if (MODO === 'si') {
     if (!D.om) return null;
     const o = D.om.data, d = new Date(+o.slice(0, 4), +o.slice(4, 6) - 1, +o.slice(6, 8)), dias = Math.round((hoje - d) / 864e5), dw = hoje.getDay();
-    const velho = dias >= 4 || (dias > 0 && dw >= 1 && dw <= 5 && (dw === 1 || dw === 4 || hoje.getDate() >= 20));
+    const iso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+    const util = dw >= 1 && dw <= 5 && !FERIADOS.has(iso), outroMes = d.getMonth() !== hoje.getMonth() || d.getFullYear() !== hoje.getFullYear();
+    const velho = dias >= 4 || (dias > 0 && util && (dw === 1 || dw === 4 || hoje.getDate() >= 20 || outroMes));
     return {velho, txt: `Pedidos de ${o.slice(6, 8)}/${o.slice(4, 6)}${dias > 0 ? ` · há ${dias} dia${dias > 1 ? 's' : ''}` : ' · hoje'}`};
   }
   let a = hoje.getFullYear(), m = hoje.getMonth() + 1 - (hoje.getDate() >= 8 ? 1 : 2); if (m <= 0) { m += 12; a--; }   // último mês fechado que o site precisa ter
