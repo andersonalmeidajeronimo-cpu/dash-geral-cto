@@ -216,3 +216,86 @@ tr.on td:first-child{box-shadow:inset 3px 0 0 var(--pink),1px 0 0 var(--row)}
 .selo{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:999px;margin-right:10px;white-space:nowrap}
 .selo.ok{color:var(--up-ink);background:var(--up-bg)}
 .selo.warn{color:#8A6100;background:#FFF1CC}
+
+/* ===== cabeçalho novo (19/10): topo, linha das visões, filtros e faixa "Filtros:" ===== */
+.trancado .topo{display:none}
+.topo{background:var(--paper)}
+.topo-in{max-width:1260px;margin:0 auto;padding:18px max(22px,env(safe-area-inset-right,0px)) 10px max(22px,env(safe-area-inset-left,0px));display:flex;align-items:center;gap:16px}
+.topo-tit{background:var(--white);border-radius:var(--radius);padding:14px 26px;text-decoration:none!important;color:var(--ink)}
+.topo-tit h1{margin:0;font-size:40px;line-height:1.05;font-weight:600;letter-spacing:-.02em}
+.topo-meio{flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:12.5px;color:var(--slate)}
+.topo-meio a{font-size:12.5px}
+.topo-logo{background:var(--white);border-radius:var(--radius);padding:10px 22px;display:flex;align-items:center}
+.topo-logo img{height:52px;display:block}
+.gnav{height:56px}
+.gnav .nav.rv{color:var(--red);font-weight:700;opacity:1}
+.gnav a.nav{font-size:14px;padding:7px 11px}
+.gnav .acoes{margin-left:auto;display:flex;gap:8px;padding-left:12px;flex:0 0 auto}
+.btn-top{border:0;background:var(--white);color:var(--link);font:inherit;font-size:13px;font-weight:600;padding:8px 16px;border-radius:12px;cursor:pointer;white-space:nowrap}
+.btn-top:hover{box-shadow:inset 0 0 0 1px var(--hair)}
+.btn-top:disabled{opacity:.6;cursor:progress}
+.fbar{top:calc(56px + env(safe-area-inset-top,0px))}
+.fbar .cut{margin-left:0;padding-left:0;padding-right:6px}
+.fbar .modo{margin:0 6px 0 4px}
+.fsel-in{max-width:1260px;margin:0 auto;padding:0 max(22px,env(safe-area-inset-right,0px)) 10px max(22px,env(safe-area-inset-left,0px));display:flex;align-items:center;gap:10px}
+.fsel-lab{background:var(--ink);color:#fff;font-size:13px;font-weight:700;padding:8px 14px;border-radius:10px;white-space:nowrap}
+.fsel-box{flex:1;min-height:36px;background:var(--white);border-radius:10px;padding:4px 8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;overflow:hidden}
+.fsel-box .vazio{font-size:12.5px;color:var(--slate);padding:0 4px}
+.ftag{border:0;background:var(--paper);color:var(--ink);font:inherit;font-size:12.5px;padding:4px 10px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.ftag:hover{background:var(--down-bg);color:var(--down-ink)}
+.ftag span{opacity:.6;margin-left:2px}
+@media (max-width:900px){.topo-tit h1{font-size:30px}.topo-logo img{height:40px}.topo-in{flex-wrap:wrap}.topo-meio{order:3;flex:0 0 100%}.topo-meio>span:not(.selo){display:none}
+  .btn-top .lg{display:none}.btn-top .sm{display:inline}}
+@media (max-width:640px){.topo-in{padding-top:12px}.topo-tit{padding:10px 16px}.topo-tit h1{font-size:24px}.topo-logo{padding:8px 14px}.topo-logo img{height:30px}
+  .gnav .acoes .btn-top{padding:7px 11px;font-size:12px}.fsel-in{flex-wrap:wrap}.fsel-box{flex-basis:100%;order:3}}
+
+/* ===== slides (Modo Apresentação e PDF), 1280 x 720 ===== */
+.impressao{position:absolute;left:-30000px;top:0;width:1280px}
+.slide{width:1280px;height:720px;background:var(--paper);position:relative;overflow:hidden;box-sizing:border-box;padding:22px 40px 0;display:flex;flex-direction:column;transform-origin:top left}
+.slide .s-top{display:flex;align-items:center;gap:12px;font-size:13px;color:var(--slate);height:28px;flex:0 0 auto}
+.slide .s-top img{height:24px}
+.slide .s-top b{color:var(--ink);font-weight:600}
+.slide .s-top .s-rec{margin-left:auto;max-width:640px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slide .s-tit h2{font-size:30px;font-weight:600;letter-spacing:-.01em;margin:14px 0 12px;line-height:1.15}
+.slide .s-tit h2 span{color:var(--slate)}
+.slide .s-corpo{flex:1;overflow:hidden;position:relative}
+.slide .s-escala{transform-origin:top left}
+.slide .s-escala>*:last-child{margin-bottom:0}
+.slide .shelf{flex-wrap:wrap;overflow:visible}
+.slide .tw{overflow:visible}
+.slide .s-pe{display:flex;justify-content:space-between;font-size:11.5px;color:var(--slate);height:30px;align-items:center;flex:0 0 auto}
+.slide.capa .s-escala{padding-top:24px}
+.slide .s-h1{font-size:56px;line-height:1.05;font-weight:600;letter-spacing:-.02em;margin:6px 0 10px}
+.slide .s-h1 span{color:var(--slate)}
+.slide .s-sub{font-size:16px;color:var(--slate);margin:0 0 22px}
+.apres{position:fixed;inset:0;z-index:200;background:#1D1D1F;display:flex;flex-direction:column}
+.apres[hidden]{display:none}
+.ap-palco{flex:1;display:flex;align-items:flex-start;justify-content:center;overflow:hidden;cursor:pointer}
+.ap-palco .slide{flex:0 0 auto;transform-origin:top center}
+.ap-ctl{height:56px;display:flex;align-items:center;justify-content:center;gap:12px;color:#fff;font-size:14px}
+.ap-ctl button{border:0;background:rgba(255,255,255,.12);color:#fff;font:inherit;font-size:14px;padding:8px 16px;border-radius:999px;cursor:pointer}
+.ap-ctl button:hover{background:rgba(255,255,255,.22)}
+body.apresentando{overflow:hidden}
+@media print{
+  body.imprimindo>*:not(#impressao){display:none!important}
+  body.imprimindo{background:var(--paper)}
+  body.imprimindo #impressao{position:static;left:0;width:1280px}
+  body.imprimindo .slide{break-after:page;page-break-after:always}
+  body.imprimindo .slide:last-child{break-after:auto;page-break-after:auto}
+  body.imprimindo *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+}
+
+/* linha das visões: só os links rolam; Modo Apresentação, PDF e Excel ficam sempre à vista */
+.gnav-in{overflow:visible}
+.nav-rol{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:4px;overflow-x:auto;scrollbar-width:none;height:100%}
+.nav-rol::-webkit-scrollbar{display:none}
+.btn-top .sm{display:none}
+/* slides: grade e tabela no tamanho do slide em qualquer aparelho */
+.slide .g2{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+.slide .g3{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+.slide .g4{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+.slide .tw{max-height:none!important;overflow:visible!important}
+.slide .tw table th,.slide .tw table td{position:static!important}
+.slide .card{padding:20px 24px;margin-bottom:14px}
+.slide .s-subtit{font-size:22px;font-weight:600;margin:18px 0 10px}
+.slide .s-subtit span{color:var(--slate)}

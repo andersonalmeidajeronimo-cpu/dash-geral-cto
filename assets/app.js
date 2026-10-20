@@ -19,10 +19,15 @@ const FILTROS_SO = [['recorte','Recorte'],['uf','UF'],['grp','Grp. Econômico'],
 const FILTROS_SI = [['grp','Cliente'],['recorte','Cliente (L4)'],['executivo','Executivo'],['canal','Canal'],['uf','BU'],['marca','Marca'],['segmento','Segmento']];
 const PAGES_SO = [
   ['inicio','Início'], ['geral','Dados gerais'], ['veja','Veja'], ['vanish','Vanish'], ['harpic','Harpic'], ['finish','Finish'],
-  ['hn','H&N'], ['diretor','Visão do Diretor'], ['redes-scan','Redes Scanntech'], ['redes-col','Redes Colecta'], ['confronto','Confronto de fontes'], ['depara','De-para'], ['base','Base geral']];
+  ['hn','H&N'], ['diretor','Visão do Diretor'], ['clientes','Clientes'], ['executivos','Executivos'], ['redes-scan','Redes Scanntech'], ['redes-col','Redes Colecta'], ['confronto','Confronto de fontes'], ['depara','De-para'], ['base','Base geral']];
 const PAGES_SI = [
   ['si-inicio','Início'], ['si-geral','Dados gerais'], ['si-veja','Veja'], ['si-vanish','Vanish'], ['si-harpic','Harpic'], ['si-finish','Finish'],
-  ['si-hn','H&N'], ['si-diretor','Visão do Diretor'], ['si-clientes','Clientes'], ['si-exec','Executivos'], ['si-q4','Plano Q4'], ['si-mes','Mês em curso'], ['si-base','Base geral']];
+  ['si-hn','H&N'], ['si-diretor','Visão do Diretor'], ['si-clientes','Clientes'], ['si-exec','Executivos'], ['si-q4','Plano Q4'], ['si-mes','Mês em curso'], ['si-rv','RV'], ['si-base','Base geral']];
+/* linha das visões: as mesmas nas duas pernas; Plano Q4, Mês em curso e RV são do sell in (levam para a perna Sell In) */
+const NAV = [['Início', 'inicio', 'si-inicio'], ['Dados gerais', 'geral', 'si-geral'], ['Visão do Diretor', 'diretor', 'si-diretor'], ['Clientes', 'clientes', 'si-clientes'],
+  ['Executivos', 'executivos', 'si-exec'], ['Plano Q4', null, 'si-q4'], ['Mês em curso', null, 'si-mes'], ['RV', null, 'si-rv']];
+const PAI = {veja: 'geral', vanish: 'geral', harpic: 'geral', finish: 'geral', hn: 'geral', 'si-veja': 'si-geral', 'si-vanish': 'si-geral', 'si-harpic': 'si-geral', 'si-finish': 'si-geral', 'si-hn': 'si-geral',
+  'redes-scan': 'clientes', 'redes-col': 'clientes', confronto: 'inicio', depara: 'inicio', base: 'inicio', 'si-base': 'si-inicio'};
 const TODAS_PAGES = [...PAGES_SO, ...PAGES_SI];
 const S = {page: 'inicio', f: {}, corte: DSO.corte, ui: {}, uiSO: {}, uiSI: {}, fSO: {}, fSI: {}, corteSO: DSO.corte, corteSI: DSI ? DSI.corte : DSO.corte};
 FILTROS_SO.forEach(([k]) => { S.fSO[k] = new Set(); S.fSI[k] = new Set(); });
@@ -98,24 +103,25 @@ function gravarHash(novaEntrada = false) {
 }
 
 /* ---------- motor de cálculo ---------- */
-let BASE = [], PBASE = [], OMB = [];
+let BASE = [], PBASE = [], OMB = [], OMB_ANT = [];
 function filtrar() {
   const ativos = FILTROS.filter(([k]) => k !== 'marca' && k !== 'segmento' && S.f[k].size).map(([k]) => [COL[k], S.f[k]]);
   BASE = D.rows.filter(r => ativos.every(([c, s]) => s.has(r[c])));
   PBASE = MODO === 'si' ? (D.plano || []).filter(r => ativos.every(([c, s]) => s.has(r[c]))) : [];
   OMB = MODO === 'si' ? omFiltrado() : [];
+  OMB_ANT = MODO === 'si' && D.om && D.om.linhas_ant ? omFiltrado(D.om.linhas_ant) : [];   // faturado dos meses anteriores do trimestre
 }
 /* Order Management (mês em curso): [grp, executivo, canal, BU, marca, segmento, flag do item 1 da régua (definição no arquivo cifrado), faturado cx, carteira liberada cx, alocação cx, futura cx, NR/cx, sold to, UF, L4 (-1 sem par), carteira bloqueada cx] */
 const OMC = {grp: 0, executivo: 1, canal: 2, uf: 3, marca: 4, segmento: 5};
-function omFiltrado() {
+function omFiltrado(linhas) {
   if (!D.om) return [];
   const at = ['grp', 'executivo', 'canal', 'uf'].filter(k => S.f[k].size).map(k => [OMC[k], S.f[k]]);
   const l4 = S.f.recorte.size ? S.f.recorte : null;   // L4 do P&L pelo código Plan to de cada pedido (coluna 14)
-  return D.om.linhas.filter(l => at.every(([c, st]) => st.has(l[c])) && (!l4 || l4.has(l[14])));
+  return (linhas || D.om.linhas).filter(l => at.every(([c, st]) => st.has(l[c])) && (!l4 || l4.has(l[14])));
 }
-function omSoma({marcas = null, segs = null, chave = null, sub = null, so = null} = {}) {   // so: 'hyg' = só Hygiene (o plano é só Hygiene)
+function omSoma({marcas = null, segs = null, chave = null, sub = null, so = null, linhas = null} = {}) {   // so: 'hyg' = só Hygiene (a régua do Q4)
   const out = new Map(), hy = id('uf', 'Hygiene');
-  for (const l of OMB) {
+  for (const l of linhas || OMB) {
     if (marcas && !marcas.has(l[4])) continue;
     if (segs && !segs.has(l[5])) continue;
     if (so === 'hyg' && l[3] !== hy) continue;
@@ -166,7 +172,7 @@ function agg(a, ano, meses, media) {
 const ate = n => Array.from({length: n}, (_, i) => i + 1);
 const ytd = (a, ano, med) => agg(a, ano, ate(S.corte), MED[med].media);
 const ano = (a, y, med) => agg(a, y, ate(12), MED[med].media);
-const varr = (n, d) => (isFinite(n) && isFinite(d) && d > 0 ? n / d - 1 : NaN);   // base zero ou negativa (devolução no P&L) não gera %
+const varr = (n, d) => (isFinite(n) && isFinite(d) && d > 0 && d >= 0.01 * Math.abs(n) ? n / d - 1 : NaN);   // sem % absurdo sobre base mínima (ex.: R$ 1 no mês)   // base zero ou negativa (devolução no P&L) não gera %
 
 /* ---------- formatos pt-BR ---------- */
 const nf0 = new Intl.NumberFormat('pt-BR', {maximumFractionDigits: 0});
@@ -201,7 +207,9 @@ document.addEventListener('mousemove', e => {
   tip.style.left = Math.max(8, Math.min(e.clientX + 14, innerWidth - w - 8)) + 'px'; tip.style.top = (e.clientY + 16) + 'px';
 });
 
+let SLIDE = false;   // ligado enquanto os slides são montados: gráficos no tamanho do slide, não da tela de quem gera
 function larguraCard() {
+  if (SLIDE) return 1160;
   const app = document.getElementById('app'), w = app ? app.clientWidth : 1000;
   return w - (innerWidth < 640 ? 80 : 100);   // padding do main + padding do card
 }
@@ -364,11 +372,17 @@ const seloValidade = () => { const x = validade(); return x ? `<span class="selo
 
 /* ---------- barra global e segmentações ---------- */
 function nav() {
-  document.getElementById('gnav').innerHTML = `<a class="brand" href="#${T('inicio', 'si-inicio')}" data-act="pg" data-pg="${T('inicio', 'si-inicio')}"><img src="assets/reckitt_logo.png" alt="Reckitt">Governança CTO</a>` +
-    (DSI ? `<span class="modo" role="tablist" aria-label="Perna"><button data-act="modo" data-m="so" class="${MODO === 'so' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'so'}">Sell Out</button><button data-act="modo" data-m="si" class="${MODO === 'si' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'si'}">Sell In</button></span>` : '') +
-    PAGES.map(([k, n]) => `<a class="nav ${S.page === k ? 'on' : ''}" href="#${k}" data-act="pg" data-pg="${k}">${n}</a>`).join('') +
-    `<span class="upd">${seloValidade()}Atualizado em ${D.gerado.split(' ')[0]}</span>` +
-    (window.DASH_COFRE ? '<a class="nav" href="#sair" data-act="sair" title="Fechar o acesso neste aparelho">Sair</a>' : '');
+  const topo = document.getElementById('topo');
+  if (topo) topo.innerHTML = `<div class="topo-in"><a class="topo-tit" href="#${T('inicio', 'si-inicio')}" data-act="pg" data-pg="${T('inicio', 'si-inicio')}"><h1>Governança CTO</h1></a>
+    <div class="topo-meio">${seloValidade()}<span>Atualizado em ${D.gerado.split(' ')[0]} · ${T('Sell Out', 'Sell In')}</span>${window.DASH_COFRE ? '<a href="#sair" data-act="sair" title="Fechar o acesso neste aparelho">Sair</a>' : ''}</div>
+    <div class="topo-logo"><img src="assets/reckitt_logo.png" alt="Reckitt"></div></div>`;
+  const atual = PAI[S.page] || S.page;
+  document.getElementById('gnav').innerHTML = '<div class="nav-rol">' + NAV.filter(([, so, si]) => (MODO === 'si' ? si : so || (DSI && si))).map(([n, so, si]) => {
+    const alvo = MODO === 'si' ? si : (so || si), on = atual === so || atual === si;
+    return `<a class="nav ${on ? 'on' : ''} ${n === 'RV' ? 'rv' : ''}" href="#${alvo}" data-act="pg" data-pg="${alvo}">${n}</a>`;
+  }).join('') + `</div><span class="acoes"><button class="btn-top" data-act="apres" title="Abre a página aberta como slides, no recorte marcado"><span class="lg">Modo Apresentação</span><span class="sm">Slides</span></button>
+    <button class="btn-top" data-act="pdf" title="Gera a apresentação em PDF da página aberta, no recorte marcado">⤓ PDF</button>
+    <button class="btn-top" data-act="excel" title="Baixa um Excel com as tabelas desta página, no recorte marcado">⤓ Excel</button></span>`;
 }
 function opcoes(k) {
   let ids = dic[k].map((_, i) => i);
@@ -383,13 +397,18 @@ function opcoes(k) {
 }
 function fbar() {
   const ativo = FILTROS.some(([k]) => S.f[k].size);
-  document.getElementById('fbar').innerHTML = FILTROS.map(([k, n]) => {
-    const s = S.f[k];
-    const txt = s.size === 1 ? (k === 'grp' || k === 'executivo' ? tit(dic[k][[...s][0]]) : esc(dic[k][[...s][0]])) : n;
-    return `<button class="chip ${s.size ? 'on' : ''}" data-act="pop" data-k="${k}">${txt}${s.size > 1 ? ` <span class="n">${s.size}</span>` : ''} <span aria-hidden="true">▾</span></button>`;
-  }).join('') + `<button class="chip clear" data-act="limpar" ${ativo ? '' : 'disabled'}>Limpar</button>
-    <button class="chip xls" data-act="excel" title="Baixa um Excel com as tabelas desta página, no recorte marcado">⤓ Excel</button>
-    <label class="cut">Mês de corte <select data-act="corte">${ate(D.ult26).map(m => `<option value="${m}" ${m === S.corte ? 'selected' : ''}>${mes(m)}/26</option>`).join('')}</select></label>`;
+  document.getElementById('fbar').innerHTML = `<label class="cut">Mês de corte <select data-act="corte">${ate(D.ult26).map(m => `<option value="${m}" ${m === S.corte ? 'selected' : ''}>${mes(m)}/26</option>`).join('')}</select></label>` +
+    (DSI ? `<span class="modo" role="tablist" aria-label="Perna"><button data-act="modo" data-m="so" class="${MODO === 'so' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'so'}">Sell Out</button><button data-act="modo" data-m="si" class="${MODO === 'si' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'si'}">Sell In</button></span>` : '') +
+    FILTROS.map(([k, n]) => {
+      const st = S.f[k];
+      const txt = st.size === 1 ? (k === 'grp' || k === 'executivo' ? tit(dic[k][[...st][0]]) : esc(dic[k][[...st][0]])) : n;
+      return `<button class="chip ${st.size ? 'on' : ''}" data-act="pop" data-k="${k}">${txt}${st.size > 1 ? ` <span class="n">${st.size}</span>` : ''} <span aria-hidden="true">▾</span></button>`;
+    }).join('');
+  // faixa "Filtros:": cada seleção vira uma etiqueta que sai com um clique
+  const tags = FILTROS.flatMap(([k, n]) => [...S.f[k]].map(i => `<button class="ftag" data-act="rmf" data-k="${k}" data-i="${i}" title="Tirar este filtro">${n}: ${k === 'grp' || k === 'executivo' ? tit(dic[k][i]) : esc(dic[k][i])} <span aria-hidden="true">×</span></button>`));
+  const fs = document.getElementById('fsel');
+  if (fs) fs.innerHTML = `<span class="fsel-lab">Filtros:</span><div class="fsel-box">${tags.join('') || '<span class="vazio">Nenhum filtro: visão completa da regional.</span>'}</div>
+    <button class="chip clear" data-act="limpar" ${ativo ? '' : 'disabled'}>Limpar</button>`;
 }
 let POP = null;
 function abrirPop(k, btn) {
@@ -418,16 +437,20 @@ function abrirPop(k, btn) {
 }
 function fecharPop() { if (POP) { POP.el.remove(); POP = null; } }
 document.addEventListener('click', e => {
+  if (e.target.closest('#apres, #impressao')) return;
   const t = e.target.closest('[data-act]');
   if (POP && !e.target.closest('.pop') && !(t && t.dataset.act === 'pop')) fecharPop();
   if (!t) return;
   const act = t.dataset.act;
   if (act === 'pop') { if (POP && POP.k === t.dataset.k) fecharPop(); else abrirPop(t.dataset.k, t); }
   else if (act === 'limpar') { FILTROS.forEach(([k]) => S.f[k].clear()); atualizar(); }
+  else if (act === 'rmf') { const k = t.dataset.k; S.f[k].delete(+t.dataset.i); if (k === 'marca') { const ok = new Set(opcoes('segmento')); S.f.segmento.forEach(x => { if (!ok.has(x)) S.f.segmento.delete(x); }); } atualizar(); }
+  else if (act === 'apres') abrirApresentacao();
+  else if (act === 'pdf') gerarPDF(t);
   else if (act === 'med') { S.ui['m' + t.dataset.bid] = t.dataset.m; document.getElementById('b-' + t.dataset.bid).innerHTML = blocoIn(t.dataset.bid); }
   else if (act === 'ui') {
     S.ui[t.dataset.k] = t.dataset.v; if (t.dataset.k === 'bnv') S.ui.pag = 0; render(false);
-    if ((t.dataset.k === 'scsel' || t.dataset.k === 'clsel' || t.dataset.k.startsWith('sel')) && t.dataset.v) { const d = document.querySelector('#app .det'); if (d) scrollTo({top: d.getBoundingClientRect().top + scrollY - 120}); }
+    if ((t.dataset.k === 'scsel' || t.dataset.k === 'clsel' || t.dataset.k.startsWith('sel')) && t.dataset.v) { const d = document.querySelector('#app .det'); if (d) { const off = document.querySelector('.gnav').offsetHeight + document.querySelector('.fbar').offsetHeight + 12; scrollTo({top: d.getBoundingClientRect().top + scrollY - off}); } }
   }
   else if (act === 'pg') { e.preventDefault(); irPara(t.dataset.pg); }
   else if (act === 'modo') { if (t.dataset.m !== MODO) irPara(t.dataset.m === 'si' ? 'si-inicio' : 'inicio'); }
@@ -441,6 +464,7 @@ document.addEventListener('change', e => {
   if (e.target.dataset.act === 'corte') { S.corte = +e.target.value; atualizar(); }
 });
 function irPara(pg) {
+  fecharPop();
   const mudou = pg !== S.page, m = modoDaPagina(pg);
   if (m !== MODO) { aplicarModo(m); filtrar(); fbar(); }
   S.page = pg; S.ui.pag = 0; gravarHash(mudou); render(); scrollTo({top: 0});
@@ -453,7 +477,7 @@ function atualizar(manterPop) {
 var ULTIMO = location.hash;
 function doEndereco() {
   if (ART || location.hash === ULTIMO) return;
-  ULTIMO = location.hash; const antes = S.page;
+  ULTIMO = location.hash; const antes = S.page; fecharPop(); if (APRES) fecharApresentacao();
   lerHash(); filtrar(); gravarHash(); fbar(); render(); if (S.page !== antes) scrollTo({top: 0});
 }
 addEventListener('hashchange', doEndereco);
@@ -466,10 +490,8 @@ addEventListener('resize', () => { clearTimeout(tRz); tRz = setTimeout(() => { i
 function hero(eyebrow, t1, t2, side = '') {
   return `<section class="hero${eyebrow ? ' sm' : ''}"><div>${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ''}<h1>${t1} <span>${t2}</span></h1></div>${side}</section>`;
 }
-function recorteTxt() {
-  const p = FILTROS.filter(([k]) => S.f[k].size).map(([k, n]) => `${n}: ${[...S.f[k]].map(i => tit(dic[k][i])).join(', ')}`);
-  return p.length ? `<p class="note">Recorte aplicado · ${p.join(' · ')}</p>` : '';
-}
+const recorteResumo = () => FILTROS.filter(([k]) => S.f[k].size).map(([k, n]) => `${n}: ${[...S.f[k]].map(i => tit(dic[k][i])).join(', ')}`).join(' · ');
+function recorteTxt() { return ''; }   // o recorte aparece na faixa "Filtros:" do topo, nos slides e no Excel
 
 function pgInicio() {
   const op = {marcas: gMarcas(), segs: gSegs()};
@@ -509,6 +531,8 @@ function pgInicio() {
     ['finish','Finish','Visão marca e segmentos: Pó, Secante e Tabletes.'],
     ['hn','H&N','Health & Nutrition: Sustagen, Bem Estar Sexual (Jontex + Olla) e Veet.'],
     ['diretor','Visão do Diretor','Distribuidor x marca x ano, no acumulado.'],
+    ['clientes','Clientes','Curvas por distribuidor, quem soma e quem tira do ano, e as abas das redes compradoras.'],
+    ['executivos','Executivos','As mesmas curvas por executivo, com os distribuidores de cada carteira.'],
     ['redes-scan','Redes Scanntech','Redes de varejo: Reckitt, mercado e share por rede e UF, quem cresce e quem cai, mês a mês.'],
     ['redes-col','Redes Colecta','Redes que compram dos distribuidores, por executivo, UF e distribuidor, cruzadas com a Scanntech.'],
     ['confronto','Confronto de fontes','MTRIX x Colecta nos mesmos meses, distribuidor, marca e segmento.'],
@@ -1007,7 +1031,8 @@ const Q4P = () => D.q4 || {piso: NaN, alvo: NaN, regua_item1: NaN, regua_item2: 
 const rq = k => esc((Q4P().rot || {})[k] || ''), tq = k => esc((Q4P().txt || {})[k] || '');
 const om1 = o => Object.assign({...ZERO_OM}, omSoma(o).get('_') || {});
 const dRS = x => (isFinite(x) ? `<span class="vr ${x > 0.5 ? 'up' : x < -0.5 ? 'down' : 'flat'}">${x > 0 ? '+' : ''}${n0(x)}</span>` : '');
-const pctMeta = x => (isFinite(x) ? `<span class="vr ${x >= 1 ? 'up' : x >= Q4P().piso ? 'warn' : 'down'}">${p1(x)}</span>` : '');   // atingimento: verde a partir de 100%, amarelo a partir do piso
+const pctMeta = x => (isFinite(x) ? `<span class="vr ${x >= 1 ? 'up' : x >= Q4P().piso ? 'warn' : 'down'}">${p1(x)}</span>` : '');
+const pctMetaG = pctMeta;   // atingimento: verde a partir de 100%, amarelo a partir do piso
 const zeroNaN = x => (x ? x : NaN);
 
 /* curva do ano numa linha: 2025 cinza, 2026 rosa e o plano do Q4 tracejado */
@@ -1054,28 +1079,28 @@ function tabelaCurvas(t, rotulo, L, nomeFn, extraFn) {
     `<td>${n0(x.c26)}</td><td>${vc(varr(x.c26, x.c25))}</td><td>${n2(x.r26 / x.c26)}</td><td>${vc(varr(x.r26 / x.c26, x.r25 / x.c25))}</td>` +
     (comPl ? `<td class="b pl">${n0(zeroNaN(x.pl))}</td><td>${n0(x.q425)}</td><td>${vc(varr(x.pl, x.q425))}</td>` : '') + '</tr>';
   return `<div class="tw"><table><thead><tr>${thSort(t, 0, rotulo, 'l')}${extraFn ? '<th class="l"></th>' : ''}<th>Curva 25 · 26${comPl ? ' · plano' : ''}</th>
-    ${thSort(t, 1, `NR 25 ${corteTxt()}`)}${thSort(t, 2, 'NR 26')}${thSort(t, 3, '26 vs 25')}${thSort(t, 4, 'Δ NR R$')}${thSort(t, 5, `${tri} vs 25`)}${thSort(t, 6, `${tri} vs 3 ant.`)}
-    ${thSort(t, 7, 'Caixas 26')}${thSort(t, 8, 'Var. cx')}${thSort(t, 9, 'NR/cx 26')}${thSort(t, 10, 'Var. NR/cx')}
+    ${thSort(t, 1, `${T('R$', 'NR')} 25 ${corteTxt()}`)}${thSort(t, 2, `${T('R$', 'NR')} 26`)}${thSort(t, 3, '26 vs 25')}${thSort(t, 4, T('Δ R$', 'Δ NR R$'))}${thSort(t, 5, `${tri} vs 25`)}${thSort(t, 6, `${tri} vs 3 ant.`)}
+    ${thSort(t, 7, 'Caixas 26')}${thSort(t, 8, 'Var. cx')}${thSort(t, 9, T('R$/cx 26', 'NR/cx 26'))}${thSort(t, 10, T('Var. R$/cx', 'Var. NR/cx'))}
     ${comPl ? `${thSort(t, 11, 'Plano Q4')}<th>Q4 2025</th>${thSort(t, 12, 'Plano vs Q4/25')}` : ''}</tr></thead><tbody>
     ${L.map(x => linha(x)).join('') || '<tr><td colspan="16" class="empty">Nada neste recorte.</td></tr>'}${L.length ? linha(T0, true) : ''}</tbody></table></div>
-    <p class="note" style="margin:10px 0 0">Clique no título da coluna para ordenar. Δ NR R$ = quanto o cliente somou ou tirou do ano. A curva mostra 2025 em cinza, 2026 em rosa${comPl ? ' e o plano do Q4 tracejado' : ''}.</p>`;
+    <p class="note" style="margin:10px 0 0">Clique no título da coluna para ordenar. ${T('Δ R$', 'Δ NR R$')} = quanto somou ou tirou do ano.${T(' Caixas não comparam entre ferramentas (MTRIX e Colecta).', '')} A curva mostra 2025 em cinza, 2026 em rosa${comPl ? ' e o plano do Q4 tracejado' : ''}.</p>`;
 }
 function ponte(L, nomeFn) {
   const up = L.filter(x => x.dr > 0.5).sort((a, b) => b.dr - a.dr).slice(0, 6), dn = L.filter(x => x.dr < -0.5).sort((a, b) => a.dr - b.dr).slice(0, 6);
   const tot = L.reduce((s, x) => s + x.dr, 0);
   const lista = X => X.map(x => `<tr><td class="l b">${nomeFn(x.k)}</td><td>${dRS(x.dr)}</td><td>${vc(x.d)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Ninguém neste recorte.</td></tr>';
-  const cab = '<thead><tr><th class="l">Nome</th><th>Δ NR R$</th><th>26 vs 25</th></tr></thead>';
-  return `<h2 class="sec">Quem puxa e quem segura. <span>Variação do NR em R$, ${corteTxt()} de 2026 contra 2025: ${dRS(tot)} no total.</span></h2><div class="grid g2">
+  const cab = `<thead><tr><th class="l">Nome</th><th>${T('Δ R$', 'Δ NR R$')}</th><th>26 vs 25</th></tr></thead>`;
+  return `<h2 class="sec">Quem puxa e quem segura. <span>Variação ${T('do sell out', 'do NR')} em R$, ${corteTxt()} de 2026 contra 2025: ${dRS(tot)} no total.</span></h2><div class="grid g2">
     <div class="card"><p class="eyebrow">Mais somaram</p><div class="tw"><table>${cab}<tbody>${lista(up)}</tbody></table></div></div>
     <div class="card"><p class="eyebrow">Mais tiraram</p><div class="tw"><table>${cab}<tbody>${lista(dn)}</tbody></table></div></div></div>`;
 }
 function detalheChave(t, k, col, nome, op) {
   const o = {...op, sub: r => r[col] === k};
-  let h = `<div class="det"><h2 class="sec">${nome}. <span>Curva do ano, marca a marca${col === COL.grp ? ' e segmento a segmento' : ' e cliente a cliente'}.</span></h2>` + bloco('det' + t + '_' + k, nome, o);
-  const MK = dic.marca.map((m, i) => [i, `<span class="${mkCls(m)}">${tit(m)}</span>`]);
+  let h = `<div class="det"><h2 class="sec">${nome}. <span>Curva do ano, marca a marca${col === COL.grp ? (MODO === 'si' ? ' e segmento a segmento' : '') : T(' e distribuidor a distribuidor', ' e cliente a cliente')}.</span></h2>` + bloco('det' + t + '_' + k, nome, o);
+  const MK = dic.marca.map((m, i) => [i, `<span class="${mkCls(m)}">${tit(m)}</span>`]).filter(([i]) => i !== TODAS);
   h += `<div class="card"><p class="eyebrow">${nome} · marca a marca</p>${tabelaYTD('Marca', MK, r => r[COL.marca], o, true)}</div>`;
-  if (col === COL.grp) h += `<div class="card"><p class="eyebrow">${nome} · segmento a segmento</p>${tabelaYTD('Segmento', dic.segmento.map((g, i) => [i, tit(g)]), r => r[COL.segmento], o)}</div>`;
-  else h += `<div class="card"><p class="eyebrow">${nome} · cliente a cliente</p>${tabelaYTD('Cliente', D.depara.map(d => [id('grp', d.grp), tit(d.grp), tit(d.canal)]), r => r[COL.grp], o)}</div>`;
+  if (col === COL.grp && MODO === 'si') h += `<div class="card"><p class="eyebrow">${nome} · segmento a segmento</p>${tabelaYTD('Segmento', dic.segmento.map((g, i) => [i, tit(g)]), r => r[COL.segmento], o)}</div>`;
+  else if (col !== COL.grp) h += `<div class="card"><p class="eyebrow">${nome} · ${T('distribuidor a distribuidor', 'cliente a cliente')}</p>${tabelaYTD(T('Distribuidor', 'Cliente'), D.depara.map(d => [id('grp', d.grp), tit(d.grp), T(d.uf, tit(d.canal))]), r => r[COL.grp], o)}</div>`;
   return h + '</div>';
 }
 
@@ -1095,7 +1120,7 @@ function q4Resumo(op) {
     card(`AR de ${nm}`, mi(arm), `<span>${rq('piso_txt')}: ${mi(arm * Q.piso)}</span>`) +
     card(`Faturado em ${nm}`, mi(N.om.nfat), `${pctMeta(N.om.nfat / arm)}<span>do AR do mês · NR estimado</span>`) +
     card('Faturado + carteira', mi(ped), `${pctMeta(ped / arm)}<span>do AR do mês · falta ${mi(Math.max(0, arm - ped))}</span>`) +
-    `</div><p class="note"><a href="#si-q4" data-act="pg" data-pg="si-q4">Abrir o Plano Q4 ›</a> com a meta por executivo, os itens da campanha e a régua do variável.</p>`;
+    `</div><p class="note"><a href="#si-q4" data-act="pg" data-pg="si-q4">Abrir o Plano Q4 ›</a> com a meta por executivo, cliente e marca. A régua do variável e os itens da campanha estão no <a href="#si-rv" data-act="pg" data-pg="si-rv">RV</a>.</p>`;
 }
 
 function pgSiInicio() {
@@ -1134,8 +1159,9 @@ function pgSiInicio() {
     ['si-diretor', 'Visão do Diretor', 'Cliente x marca x ano no acumulado, com o plano do Q4 ao lado.'],
     ['si-clientes', 'Clientes', 'Curvas de crescimento e queda por cliente, quem soma e quem tira do ano.'],
     ['si-exec', 'Executivos', 'As mesmas curvas por executivo, com a carteira de clientes de cada um.'],
-    ['si-q4', 'Plano Q4', 'AR por mês, executivo, cliente e marca, itens da campanha e a régua do variável.'],
+    ['si-q4', 'Plano Q4', 'AR por mês, executivo, cliente e marca, com a escada da regional.'],
     ['si-mes', 'Mês em curso', 'Order Management: faturado, carteira, alocação e carteira futura contra o AR do mês.'],
+    ['si-rv', 'RV', 'Faixa de NR de cada executivo no mês, marcos do trimestre, itens da campanha e a régua.'],
     ['si-base', 'Base geral', 'A base longa do P&L Restated, filtrada pelas segmentações, com download.']];
   h += `<h2 class="sec">O índice. <span>A mesma lógica da perna Sell Out.</span></h2><div class="grid g3">` +
     IDX.map(([pg, n, d], i) => `<a class="card idx" href="#${pg}" data-act="pg" data-pg="${pg}" style="color:inherit;text-decoration:none"><p class="eyebrow">${String(i + 1).padStart(2, '0')}</p><h4>${n}</h4><p>${d}</p><div class="go"><span style="color:var(--link)">Abrir ›</span></div></a>`).join('') + '</div>';
@@ -1195,6 +1221,26 @@ function pgSiExec() {
   return h;
 }
 
+/* executivos no Q4 (só Hygiene): meta, mês em curso no Order Management e itens da campanha; usado no Plano Q4 e no RV */
+function execQ4(op) {
+  const hy = idHyg(), ehH = r => r[COL.uf] === hy, opH = {...op, sub: ehH}, Q = Q4P(), N = q4Num(op), iM = Q4M.indexOf(N.mOM);
+  const semRecorte = !FILTROS.some(([k]) => S.f[k].size);
+  const chE = r => r[COL.executivo], P = cuboP('rs', {...opH, chave: chE}), PC = cuboP('cx', {...opH, chave: chE}), A25 = cubo('rs', {...opH, chave: chE});
+  const OM = omSoma({...op, so: 'hyg', chave: l => l[1]}), I2 = id('segmento', Q.seg_item2 || '');
+  const I1 = cuboP('cx', {...op, sub: r => r[14] === 1, chave: chE}), I1R = cuboP('rs', {...op, sub: r => r[14] === 1, chave: chE});
+  const I2P = cuboP('rs', {...opH, sub: r => ehH(r) && r[COL.segmento] === I2, chave: chE}), I2O = omSoma({...op, so: 'hyg', sub: l => l[5] === I2, chave: l => l[1]});
+  const car = nome => (D.cenarios && D.cenarios.carteiras || []).find(c => c.exec === nome) || {};
+  const prev = Q4M.filter(m => m < N.mOM), RP = cubo('rs', {...opH, chave: chE, semCorte: true}), OMA = new Map();
+  prev.filter(m => m > D.ult26).forEach(m => omSoma({...op, so: 'hyg', chave: l => l[1], linhas: OMB_ANT.filter(l => l[16] === m)}).forEach((o, k) => OMA.set(k, (OMA.get(k) || 0) + o.nfat)));
+  const realAnt = k => prev.reduce((t, m) => t + (m <= D.ult26 && RP.get(k) ? (v(RP.get(k), 2026, m) || 0) : 0), 0) + (OMA.get(k) || 0);
+  const ex = [...P.keys()].map(k => {
+    const pa = P.get(k), o = Object.assign({...ZERO_OM}, OM.get(k) || {}), a = A25.get(k), i1 = I1.get(k), i2 = I2P.get(k), i2o = Object.assign({...ZERO_OM}, I2O.get(k) || {});
+    const arQ = agg(pa, 2026, Q4M, false), arMes = iM >= 0 ? v(pa, 2026, N.mOM) : NaN, arM3 = Q4M.map(m => v(pa, 2026, m));
+    return {k, nome: dic.executivo[k], arQ, arMes, arM3, real: realAnt(k), q425: a ? agg(a, 2025, Q4M, false) : NaN, arC: agg(PC.get(k), 2026, Q4M, false), o, rec: semRecorte ? car(dic.executivo[k]).rec : NaN,
+      i1AR: i1 ? agg(i1, 2026, Q4M, false) : NaN, i1RS: I1R.get(k) ? agg(I1R.get(k), 2026, Q4M, false) : NaN, i2AR: i2 ? agg(i2, 2026, Q4M, false) : NaN, i2Ped: i2o.nfat + i2o.ncart};
+  }).filter(x => x.arQ > 0).sort((a, b) => b.arQ - a.arQ);
+  return {ex, N, iM, Q, semRecorte, nomeM: iM >= 0 ? MES_LONGO[N.mOM - 1] : 'mês'};
+}
 /* ----- Plano do Q4 (só Hygiene; parâmetros e textos da régua vêm do arquivo de dados cifrado) ----- */
 function regrasQ4() {
   return `<h2 class="sec">A régua do variável. <span>${tq('regua')}</span></h2><div class="card"><ol class="num">${(D.regras_q4 || []).map(t => `<li>${esc(t)}</li>`).join('')}</ol>
@@ -1204,7 +1250,7 @@ const notaL4 = () => ((S.f.recorte.size || S.f.canal.size) && D.nota_l4_om ? `<p
 function pgSiQ4() {
   const op = {marcas: gMarcas(), segs: gSegs()}, hy = idHyg(), ehH = r => r[COL.uf] === hy, opH = {...op, sub: ehH}, Q = Q4P();
   let h = hero('Plano Q4', 'O plano do Q4.', `AR oficial de 29/09 em Hygiene, o Q4 de 2025 e o mês em curso no Order Management até ${omData()}.`) + recorteTxt();
-  if (!temPlano(umP('rs', opH))) return h + '<div class="card"><div class="empty">Este recorte não tem AR de Hygiene no Q4.</div></div>' + regrasQ4();
+  if (!temPlano(umP('rs', opH))) return h + notaL4() + '<div class="card"><div class="empty">Este recorte não tem AR de Hygiene no Q4.</div></div><p class="note"><a href="#si-rv" data-act="pg" data-pg="si-rv">Abrir o RV ›</a> com a régua do variável.</p>';
   h += `<p class="note">${tq('base')}</p>` + notaL4();
   const N = q4Num(op), iM = Q4M.indexOf(N.mOM), arm = iM >= 0 ? N.arM[iM] : NaN, ped = N.om.nfat + N.om.ncart, nomeM = iM >= 0 ? MES_LONGO[N.mOM - 1] : 'mês';
   const card = (lab, val, sub) => `<div class="card kpi"><div class="lab">${lab}</div><div class="val">${val}</div><div class="sub dv">${sub}</div></div>`;
@@ -1225,17 +1271,7 @@ function pgSiQ4() {
       `</tbody></table></div><p class="note" style="margin:12px 0 0">Q4 de 2025 realizado em Hygiene: ${mi(N.q425)}. ${tq('escada_nota')}</p></div>`;
   }
   // por executivo: meta e mês em curso
-  const chE = r => r[COL.executivo], P = cuboP('rs', {...opH, chave: chE}), PC = cuboP('cx', {...opH, chave: chE}), A25 = cubo('rs', {...opH, chave: chE});
-  const OM = omSoma({...op, so: 'hyg', chave: l => l[1]}), I2 = id('segmento', Q.seg_item2 || '');
-  const I1 = cuboP('cx', {...op, sub: r => r[14] === 1, chave: chE}), I1R = cuboP('rs', {...op, sub: r => r[14] === 1, chave: chE});
-  const I2P = cuboP('rs', {...opH, sub: r => ehH(r) && r[COL.segmento] === I2, chave: chE}), I2O = omSoma({...op, so: 'hyg', sub: l => l[5] === I2, chave: l => l[1]});
-  const car = nome => (D.cenarios && D.cenarios.carteiras || []).find(c => c.exec === nome) || {};
-  const ex = [...P.keys()].map(k => {
-    const pa = P.get(k), o = Object.assign({...ZERO_OM}, OM.get(k) || {}), a = A25.get(k), i1 = I1.get(k), i2 = I2P.get(k), i2o = Object.assign({...ZERO_OM}, I2O.get(k) || {});
-    const arQ = agg(pa, 2026, Q4M, false), arMes = iM >= 0 ? v(pa, 2026, N.mOM) : NaN;
-    return {k, nome: dic.executivo[k], arQ, arMes, q425: a ? agg(a, 2025, Q4M, false) : NaN, arC: agg(PC.get(k), 2026, Q4M, false), o, rec: semRecorte ? car(dic.executivo[k]).rec : NaN,
-      i1AR: i1 ? agg(i1, 2026, Q4M, false) : NaN, i1RS: I1R.get(k) ? agg(I1R.get(k), 2026, Q4M, false) : NaN, i2AR: i2 ? agg(i2, 2026, Q4M, false) : NaN, i2Ped: i2o.nfat + i2o.ncart};
-  }).filter(x => x.arQ > 0).sort((a, b) => b.arQ - a.arQ);
+  const {ex} = execQ4(op);
   const falta = (x, alvo) => (!(alvo > 0) ? '' : alvo - x > 0.5 ? n0(alvo - x) : '<span class="vr up">batido</span>');
   h += `<h2 class="sec">Executivo a executivo. <span>Meta do Q4 em Hygiene e ${nomeM} em curso. Faturado e carteira em NR estimado pelo NR por caixa do segmento.</span></h2><div class="card"><div class="tw"><table><thead><tr><th class="l">Executivo</th><th>AR Q4</th><th>${rq('alvo')}</th><th>${rq('rec')}</th><th>Q4 2025</th><th>AR vs 25</th>
     <th>AR ${nomeM}</th><th>${rq('piso')}</th><th>Faturado</th><th>Carteira + alocação</th><th>% do AR</th><th>${rq('falta_piso')}</th><th>${rq('falta_100')}</th></tr></thead><tbody>` +
@@ -1246,13 +1282,6 @@ function pgSiQ4() {
       return `<tr class="tot"><td class="l">Total</td><td>${n0(t(x => x.arQ))}</td><td>${n0(t(x => x.arQ) * Q.alvo)}</td><td>${semRecorte ? n0(t(x => x.rec)) : ''}</td><td>${n0(t(x => x.q425))}</td><td>${vc(varr(t(x => x.arQ), t(x => x.q425)))}</td>
         <td>${n0(am)}</td><td>${n0(am * Q.piso)}</td><td>${n0(t(x => x.o.nfat))}</td><td>${n0(t(x => x.o.ncart))}</td><td>${pctMeta(pd / am)}</td><td>${falta(pd, am * Q.piso)}</td><td>${falta(pd, am)}</td></tr>`; })() +
     `</tbody></table></div><p class="note" style="margin:12px 0 0">${tq('exec_nota')}</p></div>`;
-  // itens da campanha
-  h += `<h2 class="sec">Itens da campanha. <span>${tq('itens')}</span></h2><div class="card"><div class="tw"><table><thead><tr><th class="l">Executivo</th>
-    <th>${rq('item1')} AR (cx)</th><th>${rq('regua1')} (cx)</th><th>${rq('item1')} AR (R$)</th><th>${rq('item1')} pedido ${nomeM} (cx)</th><th>% da régua</th><th>${rq('item2')} AR (R$)</th><th>${rq('item2')} pedido ${nomeM} (R$)</th><th>% do AR</th><th>${rq('booster')}</th><th>Pedidos no OM (R$)</th><th>% do AR Q4</th></tr></thead><tbody>` +
-    ex.map(x => { const pedQ = x.o.nfat + x.o.ncart + x.o.nfut, r1 = x.i1AR * Q.regua_item1, r2 = x.i2AR * Q.regua_item2;
-      return `<tr><td class="l b">${esc(x.nome)}</td><td>${n0(x.i1AR)}</td><td class="b">${n0(r1)}</td><td>${n0(x.i1RS)}</td><td>${n0(x.o.vped)}</td><td>${p1(x.o.vped / r1)}</td>
-        <td class="b">${n0(x.i2AR)}</td><td>${n0(x.i2Ped)}</td><td>${p1(x.i2Ped / r2)}</td><td class="b">${n0(x.arQ)}</td><td>${n0(pedQ)}</td><td>${p1(pedQ / x.arQ)}</td></tr>`; }).join('') +
-    `</tbody></table></div><p class="note" style="margin:12px 0 0">${tq('itens_nota')}</p></div>`;
   // por cliente
   const chG = r => r[COL.grp], PG = cuboP('rs', {...opH, chave: chG}), AG = cubo('rs', {...opH, chave: chG}), OG = omSoma({...op, so: 'hyg', chave: l => l[0]});
   const cl = [...PG.keys()].map(k => { const pa = PG.get(k), a = AG.get(k), o = Object.assign({...ZERO_OM}, OG.get(k) || {});
@@ -1268,7 +1297,71 @@ function pgSiQ4() {
   h += `<h2 class="sec">Marca e segmento. <span>O plano do Q4 contra o Q4 de 2025, em NR e caixas.</span></h2><div class="card"><div class="tw"><table><thead><tr><th class="l">Marca</th><th class="l">Segmento</th><th>AR Q4 NR</th><th>Q4 2025 NR</th><th>Var. NR</th><th>AR Q4 caixas</th><th>Q4 2025 caixas</th><th>Var. caixas</th></tr></thead><tbody>` +
     sg.map(x => `<tr><td class="l b ${mkCls(dic.marca[x.m])}">${tit(dic.marca[x.m])}</td><td class="l">${tit(dic.segmento[x.g])}</td><td class="b">${n0(x.q)}</td><td>${n0(x.q25)}</td><td>${vc(varr(x.q, x.q25))}</td><td>${n0(x.qc)}</td><td>${n0(x.qc25)}</td><td>${vc(varr(x.qc, x.qc25))}</td></tr>`).join('') +
     '</tbody></table></div><p class="note" style="margin:12px 0 0">O P&L não separa o VPS concentrado do diluído: no plano, os dois somam em VPS.</p></div>';
+  return h + `<p class="note"><a href="#si-rv" data-act="pg" data-pg="si-rv">Abrir o RV ›</a> com a régua do variável, a faixa de cada executivo e os itens da campanha.</p>`;
+}
+
+/* ----- RV: onde cada executivo está na régua do Q4 (textos e faixas vêm do arquivo cifrado; sem salário nem valor de RV) ----- */
+function pgSiRV() {
+  const op = {marcas: gMarcas(), segs: gSegs()};
+  let h = hero('RV', 'O variável do time.', tq('rv_sub'));
+  if (!temPlano(umP('rs', {...op, sub: subHyg(null)}))) return h + notaL4() + '<div class="card"><div class="empty">Este recorte não tem AR de Hygiene no Q4.</div></div>' + regrasQ4();
+  const {ex, Q, nomeM, N} = execQ4(op);
+  const pctMeta = x => pctMetaG(isFinite(x) ? Math.floor(x * 1000 + 1e-9) / 1000 : x);   // trunca: 99,96% não aparece como 100,0%
+  const ant = Q4M.filter(m => m < N.mOM);
+  h += `<p class="note">${tq('rv_base')}${ant.length ? ` O trimestre soma ${ant.map(m => `${MES_LONGO[m - 1]} (${m <= D.ult26 ? 'P&L fechado' : 'último Order Management do mês'})`).join(' e ')} ao mês em curso.` : ''}</p>` + notaL4();
+  const faixas = (Q.escala || []).slice().sort((a, b) => b[0] - a[0]);
+  const faixa = x => { if (!isFinite(x)) return ''; const e = faixas.find(([lim]) => x >= lim - 1e-9); return e ? `<span class="vr ${x >= 1 ? 'up' : 'warn'}">${esc(e[1])}</span>` : `<span class="vr down">${rq('abaixo')}</span>`; };
+  const marco = (feito, alvo, rot) => (!(alvo > 0) ? '' : feito >= alvo - 0.5 ? `<span class="vr up">${rot}</span>` : 'falta ' + n0(alvo - feito));
+  const t = f => ex.reduce((s, x) => s + (isFinite(f(x)) ? f(x) : 0), 0);
+  const pedM = t(x => x.o.nfat + x.o.ncart), arM = t(x => x.arMes), arQ = t(x => x.arQ), pedQ = t(x => x.real + x.o.nfat + x.o.ncart + x.o.nfut);
+  const naFaixa = ex.filter(x => (x.o.nfat + x.o.ncart) / x.arMes >= (faixas.length ? faixas[faixas.length - 1][0] : 1)).length;
+  const card = (lab, val, sub) => `<div class="card kpi"><div class="lab">${lab}</div><div class="val">${val}</div><div class="sub dv">${sub}</div></div>`;
+  h += `<div class="grid g3">` + card(`Time em ${nomeM}`, mi(pedM), `${pctMeta(pedM / arM)}<span>do AR de ${mi(arM)} · ${faixa(pedM / arM)}</span>`) +
+    card('Q4 em pedidos', mi(pedQ), `${pctMeta(pedQ / arQ)}<span>do AR do Q4 (${mi(arQ)})</span>`) +
+    card('Executivos já na faixa', `${naFaixa} de ${ex.length}`, `<span>no NR de ${nomeM}, com o pedido de hoje</span>`) + '</div>';
+  h += `<h2 class="sec">Executivo a executivo. <span>Faixa de NR de ${nomeM} e os marcos do trimestre.</span></h2><div class="card"><div class="tw"><table><thead><tr><th class="l">Executivo</th>
+    <th>AR ${nomeM}</th><th>Pedido ${nomeM}</th><th>% do AR</th><th class="l">${rq('faixa_col')}</th><th class="l">${rq('acel_col')}</th><th>AR Q4</th><th>Pedidos Q4</th><th>% do Q4</th><th class="l">${rq('marco_q4_col')}</th><th class="l">${rq('alvo')}</th></tr></thead><tbody>` +
+    ex.map(x => { const pd = x.o.nfat + x.o.ncart, pq = x.real + x.o.nfat + x.o.ncart + x.o.nfut;
+      return `<tr><td class="l b">${esc(x.nome)}</td><td>${n0(x.arMes)}</td><td class="b">${n0(pd)}</td><td>${pctMeta(pd / x.arMes)}</td><td class="l">${faixa(pd / x.arMes)}</td><td class="l">${marco(pd, x.arMes * Q.piso, rq('destravado'))}</td>
+        <td>${n0(x.arQ)}</td><td class="b">${n0(pq)}</td><td>${pctMeta(pq / x.arQ)}</td><td class="l">${marco(pq, x.arQ, rq('atingido'))}</td><td class="l">${marco(pq, x.arQ * Q.alvo, rq('atingido'))}</td></tr>`; }).join('') +
+    `<tr class="tot"><td class="l">Time</td><td>${n0(arM)}</td><td>${n0(pedM)}</td><td>${pctMeta(pedM / arM)}</td><td class="l">${faixa(pedM / arM)}</td><td class="l">${marco(pedM, arM * Q.piso, rq('destravado'))}</td><td>${n0(arQ)}</td><td>${n0(pedQ)}</td><td>${pctMeta(pedQ / arQ)}</td><td class="l">${marco(pedQ, arQ, rq('atingido'))}</td><td class="l">${marco(pedQ, arQ * Q.alvo, rq('atingido'))}</td></tr>` +
+    `</tbody></table></div></div>`;
+  h += `<h2 class="sec">Meta de cada mês. <span>AR de Hygiene por executivo e o mínimo de cada mês.</span></h2><div class="card"><div class="tw"><table><thead><tr><th class="l">Executivo</th>` +
+    Q4M.map(m => `<th>AR ${mes(m)}</th><th>${rq('piso')} ${mes(m)}</th>`).join('') + `<th>AR Q4</th></tr></thead><tbody>` +
+    ex.map(x => `<tr><td class="l b">${esc(x.nome)}</td>${x.arM3.map(a => `<td class="b">${n0(a)}</td><td>${n0(a * Q.piso)}</td>`).join('')}<td class="b">${n0(x.arQ)}</td></tr>`).join('') +
+    `<tr class="tot"><td class="l">Time</td>${Q4M.map((m, i) => { const a = t(x => x.arM3[i]); return `<td>${n0(a)}</td><td>${n0(a * Q.piso)}</td>`; }).join('')}<td>${n0(arQ)}</td></tr></tbody></table></div></div>`;
+  // itens da campanha
+  h += `<h2 class="sec">Itens da campanha. <span>${tq('itens')}</span></h2><div class="card"><div class="tw"><table><thead><tr><th class="l">Executivo</th>
+    <th>${rq('item1')} AR (cx)</th><th>${rq('regua1')} (cx)</th><th>${rq('item1')} AR (R$)</th><th>${rq('item1')} pedido ${nomeM} (cx)</th><th>% da régua</th><th>${rq('item2')} AR (R$)</th><th>${rq('item2')} pedido ${nomeM} (R$)</th><th>% do AR</th><th>${rq('booster')}</th><th>Pedidos no OM (R$)</th><th>% do AR Q4</th></tr></thead><tbody>` +
+    ex.map(x => { const pedQ = x.real + x.o.nfat + x.o.ncart + x.o.nfut, r1 = x.i1AR * Q.regua_item1, r2 = x.i2AR * Q.regua_item2;
+      return `<tr><td class="l b">${esc(x.nome)}</td><td>${n0(x.i1AR)}</td><td class="b">${n0(r1)}</td><td>${n0(x.i1RS)}</td><td>${n0(x.o.vped)}</td><td>${p1(x.o.vped / r1)}</td>
+        <td class="b">${n0(x.i2AR)}</td><td>${n0(x.i2Ped)}</td><td>${p1(x.i2Ped / r2)}</td><td class="b">${n0(x.arQ)}</td><td>${n0(pedQ)}</td><td>${p1(pedQ / x.arQ)}</td></tr>`; }).join('') +
+    `</tbody></table></div><p class="note" style="margin:12px 0 0">${tq('itens_nota')}</p></div>`;
+  h += `<p class="note">${tq('rv_fora')}</p>`;
   return h + regrasQ4();
+}
+
+/* ----- Sell Out: curvas por distribuidor e por executivo (as redes compradoras ficam nas abas de Clientes) ----- */
+const abasMarcas = pg => { const si = MODO === 'si' ? 'si-' : ''; return `<div class="pills" style="margin:0 0 18px">${[['geral', 'Total'], ['veja', 'Veja'], ['vanish', 'Vanish'], ['harpic', 'Harpic'], ['finish', 'Finish'], ['hn', 'H&N']].map(([p, n]) => `<button data-act="pg" data-pg="${si + p}" class="${si + p === pg ? 'on' : ''}">${n}</button>`).join('')}</div>`; };
+const comAbasMarca = (html, pg) => { const i = html.indexOf('</section>'); return i < 0 ? abasMarcas(pg) + html : html.slice(0, i + 10) + abasMarcas(pg) + html.slice(i + 10); };
+const abasClientesSO = pg => `<div class="pills" style="margin:0 0 18px">${[['clientes', 'Distribuidores'], ['redes-col', 'Redes Colecta'], ['redes-scan', 'Redes Scanntech']].map(([p, n]) => `<button data-act="pg" data-pg="${p}" class="${p === pg ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+const comAbas = (html, pg) => { const i = html.indexOf('</section>'); return i < 0 ? abasClientesSO(pg) + html : html.slice(0, i + 10) + abasClientesSO(pg) + html.slice(i + 10); };
+function pgSoCurvas(t, col, rot, plural, nomeFn, extraFn, sub) {
+  const op = {marcas: gMarcas(), segs: gSegs()}, L = curvasDados(r => r[col], op);
+  let h = `<h2 class="sec">Quantas crescem e quantas caem. <span>Sell out de ${corteTxt()}, 2026 contra 2025, por ${rot.toLowerCase()}.</span></h2>` + termometro(L.map(x => ({v: x.d})));
+  h += ponte(L, nomeFn);
+  h += `<h2 class="sec">${plural}. <span>${sub}</span></h2><div class="card">` + tabelaCurvas(t, rot, L, nomeFn, extraFn) + '</div>';
+  const sl = S.ui['sel' + t];
+  if (sl !== undefined && sl !== '' && L.some(x => String(x.k) === String(sl))) h += detalheChave(t, +sl, col, nomeFn(+sl), op);
+  return h;
+}
+function pgSoClientes() {
+  return hero('Clientes', 'Curvas por distribuidor.', `Quem cresce e quem cai no sell out, ${corteTxt()} de 2026 contra 2025. As redes compradoras estão nas abas.`) + abasClientesSO('clientes') +
+    pgSoCurvas('cliso', COL.grp, 'Distribuidor', 'Distribuidor a distribuidor', k => tit(dic.grp[k]), k => { const d = infoGrp(dic.grp[k]); return d ? `${esc(d.uf)} · ${esc(d.executivo)}` : ''; }, 'Clique no nome para abrir a curva e as marcas.');
+}
+function pgSoExec() {
+  return hero('Executivos', 'Curvas por executivo.', `Sell out da carteira de cada executivo, ${corteTxt()} de 2026 contra 2025.`) +
+    pgSoCurvas('exeso', COL.executivo, 'Executivo', 'Executivo a executivo', k => tit(dic.executivo[k]), null, 'Clique no nome para abrir a curva, as marcas e os distribuidores.');
 }
 
 /* ----- Mês em curso (Order Management, todas as BUs, cada uma contra o seu AR) ----- */
@@ -1419,7 +1512,7 @@ function tabelaParaLinhas(tb) {   // respeita colspan e rowspan; qualificadores 
   return {cab, linhas};
 }
 const PAGINAS = {};   // preenchido junto do render
-const paginaHTML = () => (PAGINAS[S.page] || (() => pgMarca(S.page)))();
+const paginaHTML = () => (PAGINAS[S.page] || (() => comAbasMarca(pgMarca(S.page), S.page)))();
 function linhasRecorte() {
   const L = [['Perna', T('Sell Out', 'Sell In')], ['Página', PAGES.find(p => p[0] === S.page)[1]], ['Mês de corte', `${mes(S.corte)}/26 (acumulado de ${corteTxt()})`]];
   FILTROS.forEach(([k, n]) => L.push([n, S.f[k].size ? [...S.f[k]].map(i => dic[k][i]).join(', ') : 'Todos']));
@@ -1469,6 +1562,173 @@ async function exportarExcel(btn) {
   setTimeout(() => { btn.disabled = false; btn.innerHTML = rot; }, 2200);
 }
 
+/* ---------- Modo Apresentação e PDF: a página aberta vira slides 16:9 (1280 x 720), no recorte marcado ---------- */
+const SW = 1280, SH = 720, S_MAX_LINHAS = 18, SECOES_FORA = /^(O índice|Como usar|Como ler)/;
+const tiraInstrucao = t => t.replace(/(^|\.\s+)(Clique|Escolha|Ordene|Marque|Arraste)[^.]*\.?/g, '$1').trim();   // frase de instrução de tela não vai para o slide
+function limparParaSlide(el) {   // tira o que é de clicar e corta tabela longa (a lista completa sai no Excel)
+  if (el.matches('.seg, .pills, .pager, .csvbox, input, select, textarea, button.btn, .termo:empty')) return null;
+  if (el.matches('p.note') && el.children.length && [...el.childNodes].every(n => (n.nodeType === 3 && !n.textContent.trim()) || n.tagName === 'A' || n.textContent.trim().length < 3)) return null;   // nota que só tem link
+  const caixa = document.createElement('div'); caixa.appendChild(el);   // assim as buscas abaixo também pegam o próprio bloco
+  caixa.querySelectorAll('.seg, .pills, input, textarea, select, .pager, button.btn, .csvbox').forEach(x => x.remove());
+  caixa.querySelectorAll('[data-act]').forEach(x => x.removeAttribute('data-act'));
+  caixa.querySelectorAll('a').forEach(a => { const sp = document.createElement('span'); sp.className = a.className; sp.setAttribute('style', a.getAttribute('style') || ''); sp.innerHTML = a.innerHTML; a.replaceWith(sp); });
+  caixa.querySelectorAll('button').forEach(b => { const sp = document.createElement('span'); sp.className = b.className; sp.setAttribute('style', b.getAttribute('style') || ''); sp.innerHTML = b.innerHTML; b.replaceWith(sp); });
+  caixa.querySelectorAll('tbody').forEach(tb => {
+    const corpo = [...tb.rows].filter(x => !x.classList.contains('tot') && !x.classList.contains('sub'));
+    if (corpo.length > S_MAX_LINHAS) {
+      corpo.slice(S_MAX_LINHAS).forEach(x => x.remove());
+      const tw = tb.closest('.tw') || tb.closest('table'), n = document.createElement('p');
+      n.className = 'note s-corte'; n.textContent = `Mostrando ${S_MAX_LINHAS} de ${corpo.length} linhas, na ordem da tela. A lista completa sai no Excel.`; tw.after(n);
+    }
+  });
+  caixa.querySelectorAll('table').forEach(tb => {   // tabela larga demais (ex.: 24 meses): fica a 1ª coluna e as 15 mais recentes
+    const linhas = [...tb.rows], nc = Math.max(...linhas.map(x => x.cells.length));
+    if (nc <= 16 || tb.querySelector('[colspan], [rowspan]')) return;
+    linhas.forEach(x => { [...x.cells].slice(1, nc - 15).forEach(c => c.remove()); });
+    const n = document.createElement('p'); n.className = 'note s-corte'; n.textContent = `Mostrando as ${15} colunas mais recentes de ${nc - 1}. A tabela completa sai no Excel.`;
+    (tb.closest('.tw') || tb).after(n);
+  });
+  caixa.querySelectorAll('.shelf').forEach(sh => { [...sh.children].slice(8).forEach(c => c.remove()); });
+  return caixa.firstElementChild;
+}
+function gruposDaPagina() {
+  const div = document.createElement('div'); div.innerHTML = paginaHTML();
+  const nos = []; const plano = el => { [...el.children].forEach(c => { if (c.classList.contains('det') && c.querySelector(':scope > h2.sec')) plano(c); else nos.push(c); }); };
+  plano(div);
+  let capa = null; const grupos = []; let atual = {titulo: '', sub: '', nos: []};
+  nos.forEach(el => {
+    if (el.matches('section.hero')) { capa = el; return; }
+    if (el.matches('h2.sec')) {
+      if (atual.nos.length) grupos.push(atual);
+      const sp = el.querySelector('span'), sub = sp ? sp.textContent.trim() : '';
+      atual = {titulo: el.textContent.replace(sub, '').trim().replace(/\.$/, ''), sub: tiraInstrucao(sub), nos: []}; return;
+    }
+    atual.nos.push(el);
+  });
+  if (atual.nos.length) grupos.push(atual);
+  return {capa, grupos: grupos.filter(g => !SECOES_FORA.test(g.titulo))};
+}
+function recorteSlide() {   // o resumo já sai escapado (tit); soma a busca digitada na tabela, como no Excel
+  const busca = {'redes-scan': S.ui.scbusca, 'redes-col': S.ui.clbusca, confronto: S.ui.cbusca}[S.page];
+  return [recorteResumo(), busca ? 'Busca: ' + esc(busca) : ''].filter(Boolean).join(' · ') || 'Visão completa da regional, sem filtro';
+}
+function moldeSlide(nomePg, titulo, sub) {
+  const s = document.createElement('div'); s.className = 'slide';
+  s.innerHTML = `<div class="s-top"><img src="assets/reckitt_logo.png" alt="Reckitt"><b>Governança CTO</b><span>${T('Sell Out', 'Sell In')} · ${esc(nomePg)}</span><span class="s-rec">${recorteSlide()} · corte ${mes(S.corte)}/26</span></div>
+    ${titulo ? `<div class="s-tit"><h2>${esc(titulo)}. <span>${esc(sub)}</span></h2></div>` : ''}<div class="s-corpo"><div class="s-escala"></div></div>
+    <div class="s-pe"><span>Atualizado em ${esc(D.gerado.split(' ')[0])}${MODO === 'si' && D.om ? ` · pedidos de ${omData()}` : ''} · uso interno</span><span class="s-num"></span></div>`;
+  return s;
+}
+function encaixar(s) {   // mede, aplica a escala e mede de novo (gráfico e tabela mudam de altura quando a largura muda)
+  const corpo = s.querySelector('.s-corpo'), es = s.querySelector('.s-escala'), W = corpo.clientWidth, H = corpo.clientHeight;
+  es.style.transform = ''; es.style.width = W + 'px';
+  let k = Math.min(1, H / Math.max(1, es.scrollHeight), W / Math.max(1, es.scrollWidth));
+  for (let i = 0; i < 4 && k < 1; i++) {
+    es.style.width = (W / k) + 'px';
+    const k2 = Math.min(H / Math.max(1, es.scrollHeight), (W / k) / Math.max(1, es.scrollWidth) * k);
+    if (k2 >= k - 0.002) break; k = k2;
+  }
+  es.style.transform = k < 1 ? `scale(${k})` : ''; if (k >= 1) es.style.width = W + 'px';
+  return k;
+}
+const altura = s => s.querySelector('.s-escala').scrollHeight, cabe = s => altura(s) <= s.querySelector('.s-corpo').clientHeight;
+function montarSlides() {
+  const caixa = document.getElementById('impressao'); caixa.innerHTML = '';
+  SLIDE = true;
+  let capa, grupos;
+  try { ({capa, grupos} = gruposDaPagina()); } finally { SLIDE = false; }
+  const nomePg = PAGES.find(p => p[0] === S.page)[1], slides = [];
+  // capa: o título da página, o recorte e o primeiro bloco (os números do topo)
+  const sc = moldeSlide(nomePg, '', ''); sc.classList.add('capa');
+  const h1 = capa ? capa.querySelector('h1') : null;
+  sc.querySelector('.s-escala').innerHTML = `<p class="eyebrow">${esc(T('Sell Out', 'Sell In'))} · ${esc(nomePg)}</p><h1 class="s-h1">${h1 ? h1.innerHTML : esc(nomePg)}</h1>
+    <p class="s-sub">${recorteSlide()} · acumulado de ${corteTxt()}/26</p>`;
+  const prim = grupos.length && !grupos[0].titulo ? grupos.shift() : null;
+  if (prim) prim.nos.forEach(n => { const b = limparParaSlide(n); if (b) sc.querySelector('.s-escala').appendChild(b); });
+  caixa.appendChild(sc); slides.push(sc); encaixar(sc);
+  let s = null;
+  grupos.forEach(g => {
+    const blocos = g.nos.map(limparParaSlide).filter(Boolean); if (!blocos.length) return;
+    // seção pequena entra no slide anterior, se couber sem encolher
+    if (s && s !== sc) {
+      const alvo = s.querySelector('.s-escala'), h3 = document.createElement('h3'); h3.className = 's-subtit'; h3.innerHTML = `${esc(g.titulo)}. <span>${esc(g.sub)}</span>`;
+      alvo.style.transform = ''; alvo.style.width = s.querySelector('.s-corpo').clientWidth + 'px';
+      alvo.appendChild(h3); blocos.forEach(b => alvo.appendChild(b));
+      if (cabe(s)) { encaixar(s); return; }
+      h3.remove(); blocos.forEach(b => b.remove()); encaixar(s);
+    }
+    s = moldeSlide(nomePg, g.titulo || nomePg, g.sub); caixa.appendChild(s); slides.push(s);
+    blocos.forEach(bloco => {
+      const alvo = s.querySelector('.s-escala'); alvo.appendChild(bloco);
+      if (alvo.children.length > 1 && altura(s) > s.querySelector('.s-corpo').clientHeight * 1.15) {   // não coube: slide de continuação
+        bloco.remove(); encaixar(s);
+        s = moldeSlide(nomePg, g.titulo + ' (continuação)', g.sub); caixa.appendChild(s); slides.push(s); s.querySelector('.s-escala').appendChild(bloco);
+      }
+    });
+    encaixar(s);
+  });
+  slides.forEach((x, i) => { x.querySelector('.s-num').textContent = `${i + 1}/${slides.length}`; });
+  return slides;
+}
+let APRES = null;
+function abrirApresentacao() {
+  fecharPop();
+  const slides = montarSlides(), box = document.getElementById('apres');
+  box.innerHTML = `<div class="ap-palco"></div><div class="ap-ctl"><button data-ap="ant" aria-label="Slide anterior">‹</button><span class="ap-n"></span><button data-ap="prox" aria-label="Próximo slide">›</button>
+    <button data-ap="pdf">⤓ PDF</button><button data-ap="sair">Sair (Esc)</button></div>`;
+  const palco = box.querySelector('.ap-palco'); slides.forEach(s => palco.appendChild(s));
+  box.hidden = false; document.body.classList.add('apresentando');
+  APRES = {i: 0, slides};
+  try { if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {}); } catch (e) { /* sem tela cheia */ }
+  mostrarSlide(0);
+}
+function mostrarSlide(i) {
+  if (!APRES) return;
+  const n = APRES.slides.length; APRES.i = Math.max(0, Math.min(n - 1, i));
+  const k = Math.min(innerWidth / SW, (innerHeight - 56) / SH);
+  APRES.slides.forEach((s, j) => { s.style.display = j === APRES.i ? '' : 'none'; s.style.transform = `scale(${k})`; });
+  document.querySelector('#apres .ap-n').textContent = `${APRES.i + 1} de ${n}`;
+}
+function fecharApresentacao(manter) {
+  const box = document.getElementById('apres'); box.hidden = true; if (!manter) box.innerHTML = ''; APRES = null; document.body.classList.remove('apresentando');
+  if (!manter) document.getElementById('impressao').innerHTML = '';
+  try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) { /* já saiu */ }
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-ap]'); if (!b) { if (APRES && e.target.closest('.ap-palco')) mostrarSlide(APRES.i + 1); return; }
+  const a = b.dataset.ap;
+  if (a === 'ant') mostrarSlide(APRES.i - 1); else if (a === 'prox') mostrarSlide(APRES.i + 1);
+  else if (a === 'sair') fecharApresentacao(); else if (a === 'pdf') { const prontos = APRES.slides; fecharApresentacao(true); gerarPDF(null, prontos); }
+});
+document.addEventListener('keydown', e => {
+  if (!APRES) return;
+  if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); mostrarSlide(APRES.i + 1); }
+  else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); mostrarSlide(APRES.i - 1); }
+  else if (e.key === 'Escape') fecharApresentacao();
+});
+document.addEventListener('fullscreenchange', () => { if (APRES && !document.fullscreenElement) mostrarSlide(APRES.i); });
+addEventListener('resize', () => { if (APRES) mostrarSlide(APRES.i); });
+function gerarPDF(btn, prontos) {
+  fecharPop();
+  let slides;
+  if (prontos) {   // PDF de dentro da apresentação: imprime os mesmos slides que estavam na tela
+    const caixa = document.getElementById('impressao'); caixa.innerHTML = '';
+    prontos.forEach(x => { x.style.display = ''; x.style.transform = ''; caixa.appendChild(x); }); slides = prontos;
+    document.getElementById('apres').innerHTML = '';
+  } else slides = montarSlides();
+  const titulo0 = document.title, d0 = new Date(), nomePg = PAGES.find(p => p[0] === S.page)[1];
+  const rc = FILTROS.filter(([k]) => S.f[k].size).map(([k]) => [...S.f[k]].map(i => dic[k][i]).join('+')).join(' · ').replace(/[\/:*?"<>|]/g, '').slice(0, 60);
+  document.title = `Governança CTO · ${T('Sell Out', 'Sell In')} · ${nomePg}${rc ? ' · ' + rc : ''} · ${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
+  const css = document.createElement('style'); css.id = 'estilo-pdf'; css.textContent = '@page { size: 13.333in 7.5in; margin: 0; }';
+  document.head.appendChild(css); document.body.classList.add('imprimindo');
+  let feito = false;
+  const fim = () => { if (feito) return; feito = true; document.body.classList.remove('imprimindo'); css.remove(); document.title = titulo0; document.getElementById('impressao').innerHTML = ''; removeEventListener('afterprint', fim); };
+  addEventListener('afterprint', fim);
+  if (btn) { const r0 = btn.innerHTML; btn.textContent = `${slides.length} slides: escolha "Salvar como PDF"`; setTimeout(() => { btn.innerHTML = r0; }, 6000); }
+  const imgs = [...document.querySelectorAll('#impressao img')].map(im => (im.complete ? Promise.resolve() : new Promise(ok => { im.onload = im.onerror = ok; })));
+  Promise.all(imgs).then(() => setTimeout(() => { window.print(); setTimeout(fim, 1500); }, 60));
+}
+
 const rod = document.getElementById('rodape');
 function render(topo = true) {
   nav();
@@ -1499,7 +1759,8 @@ function render(topo = true) {
   }
 }
 
-Object.assign(PAGINAS, {inicio: pgInicio, geral: pgGeral, hn: pgHN, diretor: pgDiretor, 'redes-scan': pgRedesScan, 'redes-col': pgRedesCol, confronto: pgConfronto, depara: pgDepara, base: pgBase,
-  'si-inicio': pgSiInicio, 'si-geral': pgSiGeral, 'si-hn': pgHN, 'si-diretor': pgDiretor, 'si-clientes': pgSiClientes, 'si-exec': pgSiExec, 'si-q4': pgSiQ4, 'si-mes': pgSiMes, 'si-base': pgBase});
+Object.assign(PAGINAS, {inicio: pgInicio, geral: () => comAbasMarca(pgGeral(), 'geral'), hn: () => comAbasMarca(pgHN(), S.page), diretor: pgDiretor, clientes: pgSoClientes, executivos: pgSoExec,
+  'redes-scan': () => comAbas(pgRedesScan(), 'redes-scan'), 'redes-col': () => comAbas(pgRedesCol(), 'redes-col'), confronto: pgConfronto, depara: pgDepara, base: pgBase,
+  'si-inicio': pgSiInicio, 'si-geral': () => comAbasMarca(pgSiGeral(), 'si-geral'), 'si-hn': () => comAbasMarca(pgHN(), 'si-hn'), 'si-diretor': pgDiretor, 'si-clientes': pgSiClientes, 'si-exec': pgSiExec, 'si-q4': pgSiQ4, 'si-mes': pgSiMes, 'si-rv': pgSiRV, 'si-base': pgBase});
 lerHash(); filtrar(); gravarHash(); fbar(); render();   // o endereço passa a mostrar só o recorte que foi aplicado
 })();
