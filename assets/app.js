@@ -1,10 +1,14 @@
-/* Governança CTO · site com duas pernas: Sell Out (Dash Geral, mesma lógica do DASH_GERAL_CTO_POWERQUERY.xlsx) e Sell In (P&L Restated + Order Management).
+/* Governança CTO · site com três pernas: Sell Out (Dash Geral, mesma lógica do DASH_GERAL_CTO_POWERQUERY.xlsx), Sell In (P&L Restated + Order Management)
+   e Execução Diretos (MSL das lojas das contas de atendimento direto, Power BI Execution Report).
    Sell Out: R$ e caixas somam o nível SEGMENTO; PDV vem do TOTAL, da MARCA ou do SEGMENTO conforme o recorte (sem soma dupla no total).
-   Sell In: mesmo formato de linha; R$ = NR, caixas = VOL do P&L, sem positivação. */
+   Sell In: mesmo formato de linha; R$ = NR, caixas = VOL do P&L, sem positivação.
+   Execução Diretos: base própria (mês x loja x SKU com Target e Compliance); MSL = soma do Compliance / soma do Target, lido em janela de 3 meses. */
 (() => {
 const DSO = window.DASH, DSI = window.DASH.sellin || null;
+const DEX = (() => { try { return montarDEX(window.DASH.execucao); } catch (e) { console.warn('Execução Diretos fora do site: base fora do formato.', e); return null; } })();   // perna Execução Diretos: só existe quando o arquivo cifrado traz a base de MSL; base quebrada não derruba as outras pernas
 let MODO = 'so', D = DSO;
 const T = (so, si) => (MODO === 'si' ? si : so);   // texto conforme a perna
+const PERNA = () => ({si: 'Sell In', ex: 'Execução Diretos'}[MODO] || 'Sell Out');
 const COL = {recorte:2, uf:3, grp:4, executivo:5, canal:6, fonte:7, janela:8, nivel:9, marca:10, segmento:11};
 const RS = 12, CX = 13, PDV = 14, ANO0 = 2023;
 let ANOS = [2023, 2024, 2025, 2026];
@@ -17,6 +21,8 @@ let NIV, TODAS, TODOS, MED, MEDS, FILTROS, PAGES, MARCA_PAG, HN;
 const FILTROS_SO = [['recorte','Recorte'],['uf','UF'],['grp','Grp. Econômico'],['executivo','Executivo de Vendas'],['canal','Canal'],
                     ['fonte','Fonte'],['janela','Comparabilidade'],['marca','Marca'],['segmento','Segmento']];
 const FILTROS_SI = [['grp','Cliente'],['recorte','Cliente (L4)'],['executivo','Executivo'],['canal','Canal'],['uf','BU'],['marca','Marca'],['segmento','Segmento']];
+const FILTROS_EX = [['bandeira','Cliente'],['executivo','Executivo'],['uf','UF'],['canal','Canal'],['ambiente','Ambiente'],['marca','Marca'],['segmento','Segmento']];
+const PAGES_EX = [['ex-inicio','Início'], ['ex-dados','Dados gerais'], ['ex-diretor','Visão do Diretor'], ['ex-clientes','Clientes'], ['ex-lojas','Lojas'], ['ex-executivos','Executivos'], ['ex-skus','SKUs e faltas']];
 const PAGES_SO = [
   ['inicio','Início'], ['geral','Dados gerais'], ['veja','Veja'], ['vanish','Vanish'], ['harpic','Harpic'], ['finish','Finish'],
   ['hn','H&N'], ['diretor','Visão do Diretor'], ['clientes','Clientes'], ['executivos','Executivos'], ['redes-scan','Redes Scanntech'], ['redes-col','Redes Colecta'], ['confronto','Confronto de fontes'], ['depara','De-para'], ['base','Base geral']];
@@ -29,12 +35,19 @@ const NAV = [['Início', 'inicio', 'si-inicio'], ['Dados gerais', 'geral', 'si-g
 const PAI = {veja: 'geral', vanish: 'geral', harpic: 'geral', finish: 'geral', hn: 'geral', 'si-veja': 'si-geral', 'si-vanish': 'si-geral', 'si-harpic': 'si-geral', 'si-finish': 'si-geral', 'si-hn': 'si-geral',
   'redes-scan': 'clientes', 'redes-col': 'clientes', confronto: 'inicio', depara: 'inicio', base: 'inicio', 'si-base': 'si-inicio'};
 const TODAS_PAGES = [...PAGES_SO, ...PAGES_SI];
-const S = {page: 'inicio', f: {}, corte: DSO.corte, ui: {}, uiSO: {}, uiSI: {}, fSO: {}, fSI: {}, corteSO: DSO.corte, corteSI: DSI ? DSI.corte : DSO.corte};
+const S = {page: 'inicio', f: {}, corte: DSO.corte, ui: {}, uiSO: {}, uiSI: {}, fSO: {}, fSI: {}, corteSO: DSO.corte, corteSI: DSI ? DSI.corte : DSO.corte,
+  uiEX: {}, fEX: {}, corteEX: DEX ? DEX.corte : DSO.corte};
 FILTROS_SO.forEach(([k]) => { S.fSO[k] = new Set(); S.fSI[k] = new Set(); });
+FILTROS_EX.forEach(([k]) => { S.fEX[k] = new Set(); });
 function aplicarModo(m) {   // troca a perna: dados, dicionário, medidas, filtros e páginas
   if (m === 'si' && !DSI) m = 'so';
+  if (m === 'ex' && !DEX) m = 'so';
   if (MODO === m && NIV) return;
-  if (NIV) { if (MODO === 'si') S.corteSI = S.corte; else S.corteSO = S.corte; }
+  if (NIV) { if (MODO === 'si') S.corteSI = S.corte; else if (MODO === 'ex') S.corteEX = S.corte; else S.corteSO = S.corte; }
+  if (m === 'ex') {   // Execução Diretos: base própria; as medidas, níveis e anos das outras pernas não se aplicam (o mês de corte vira o mês vigente, em AAAAMM)
+    MODO = m; D = DEX; dic = D.dic; FILTROS = FILTROS_EX; PAGES = PAGES_EX; S.f = S.fEX; S.ui = S.uiEX; S.corte = S.corteEX;
+    return;
+  }
   MODO = m; D = m === 'si' ? DSI : DSO; dic = D.dic;
   NIV = {TOTAL: id('nivel','TOTAL'), MARCA: id('nivel','MARCA'), SEG: id('nivel','SEGMENTO')};
   TODAS = id('marca','(TODAS AS MARCAS)'); TODOS = id('segmento','(TODOS OS SEGMENTOS)');
@@ -57,7 +70,7 @@ function aplicarModo(m) {   // troca a perna: dados, dicionário, medidas, filtr
   S.corte = m === 'si' ? S.corteSI : S.corteSO;
 }
 aplicarModo('so');
-const modoDaPagina = pg => (String(pg).startsWith('si-') ? 'si' : 'so');
+const modoDaPagina = pg => (String(pg).startsWith('si-') ? 'si' : String(pg).startsWith('ex-') ? 'ex' : 'so');
 
 /* ---------- estado ----------
    Site (GitHub): o recorte fica no endereço da página, então o link já abre filtrado.
@@ -78,7 +91,7 @@ function lerHash() {
   const partes = location.hash.slice(1).split('&').map(x => { try { return decodeURIComponent(x); } catch (e) { return ''; } });
   const [pg, ...qs] = partes;
   aplicarModo(modoDaPagina(pg));
-  S.page = PAGES.some(p => p[0] === pg) ? pg : (MODO === 'si' ? 'si-inicio' : 'inicio');
+  S.page = PAGES.some(p => p[0] === pg) ? pg : (MODO === 'si' ? 'si-inicio' : MODO === 'ex' ? 'ex-inicio' : 'inicio');
   FILTROS.forEach(([k]) => S.f[k].clear());
   S.corte = D.corte;
   qs.forEach(q => {
@@ -105,6 +118,7 @@ function gravarHash(novaEntrada = false) {
 /* ---------- motor de cálculo ---------- */
 let BASE = [], PBASE = [], OMB = [], OMB_ANT = [];
 function filtrar() {
+  if (MODO === 'ex') { exFiltrar(); return; }   // Execução Diretos: filtra lojas e SKUs da base de MSL
   const ativos = FILTROS.filter(([k]) => k !== 'marca' && k !== 'segmento' && S.f[k].size).map(([k]) => [COL[k], S.f[k]]);
   BASE = D.rows.filter(r => ativos.every(([c, s]) => s.has(r[c])));
   PBASE = MODO === 'si' ? (D.plano || []).filter(r => ativos.every(([c, s]) => s.has(r[c]))) : [];
@@ -357,6 +371,7 @@ function tabelaYTD(rotulo, itens, chaveFn, opts, porMarca = false) {
 const FERIADOS = new Set(['2026-11-02', '2026-11-15', '2026-11-20', '2026-12-25', '2027-01-01', '2027-02-08', '2027-02-09', '2027-03-26', '2027-04-21',
   '2027-05-01', '2027-05-27', '2027-09-07', '2027-10-12', '2027-11-02', '2027-11-15', '2027-11-20', '2027-12-25']);   // igual ao chegada.py
 function validade() {
+  if (MODO === 'ex') return validadeEx();
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   if (MODO === 'si') {
     if (!D.om) return null;
@@ -394,8 +409,8 @@ function quandoFonte(f, curto) {   // "extraído em 22/10/2026 · out/26 parcial
 }
 const avisoFonte = f => (estadoFonte(f) === 'warn' ? `Desatualizado: ${faltaFonte(f).toLowerCase()}. ` : '') + (f.obs || '');
 function faixaFontes() {   // selos "Dados de" logo abaixo do título de cada página do Sell Out, com a nota do mês parcial
-  const L = MODO === 'so' ? fontesDaPagina() : []; if (!L.length) return '';
-  const np = notaParcial();
+  const L = MODO === 'so' ? fontesDaPagina() : MODO === 'ex' ? fontesEx() : []; if (!L.length) return '';
+  const np = MODO === 'ex' ? exNotaParcial() : notaParcial();
   return `<div class="fontes"><span class="fontes-lab">Dados de</span>` +
     L.map(f => `<span class="selo ${estadoFonte(f)}" title="${esc(avisoFonte(f))}">${esc(f.nome)} · ${esc(quandoFonte(f))}</span>`).join('') +
     `<span class="fontes-site">site publicado em ${esc(DSO.gerado.split(' ')[0])}</span>${np ? `<span class="fontes-nota">${esc(np)}</span>` : ''}</div>`;
@@ -439,18 +454,20 @@ function notaParcial(k) {
 /* ---------- barra global e segmentações ---------- */
 function nav() {
   const topo = document.getElementById('topo');
-  if (topo) topo.innerHTML = `<div class="topo-in"><a class="topo-tit" href="#${T('inicio', 'si-inicio')}" data-act="pg" data-pg="${T('inicio', 'si-inicio')}"><h1>Governança CTO</h1></a>
-    <div class="topo-meio">${seloValidade()}<span>${MODO === 'so' ? esc(topoFontes()) : `Atualizado em ${D.gerado.split(' ')[0]} · Sell In`}</span>${window.DASH_COFRE ? '<a href="#sair" data-act="sair" title="Fechar o acesso neste aparelho">Sair</a>' : ''}</div>
+  const ini = MODO === 'ex' ? 'ex-inicio' : T('inicio', 'si-inicio');
+  if (topo) topo.innerHTML = `<div class="topo-in"><a class="topo-tit" href="#${ini}" data-act="pg" data-pg="${ini}"><h1>Governança CTO</h1></a>
+    <div class="topo-meio">${seloValidade()}<span>${MODO === 'so' ? esc(topoFontes()) : MODO === 'ex' ? esc(topoEx()) : `Atualizado em ${D.gerado.split(' ')[0]} · Sell In`}</span>${window.DASH_COFRE ? '<a href="#sair" data-act="sair" title="Fechar o acesso neste aparelho">Sair</a>' : ''}</div>
     <div class="topo-logo"><img src="assets/reckitt_logo.png" alt="Reckitt"></div></div>`;
   const atual = PAI[S.page] || S.page;
-  document.getElementById('gnav').innerHTML = '<div class="nav-rol">' + NAV.filter(([, so, si]) => (MODO === 'si' ? si : so || (DSI && si))).map(([n, so, si]) => {
+  document.getElementById('gnav').innerHTML = '<div class="nav-rol">' + (MODO === 'ex' ? PAGES_EX.map(([pg, n]) => `<a class="nav ${atual === pg ? 'on' : ''}" href="#${pg}" data-act="pg" data-pg="${pg}">${n}</a>`).join('') : NAV.filter(([, so, si]) => (MODO === 'si' ? si : so || (DSI && si))).map(([n, so, si]) => {
     const alvo = MODO === 'si' ? si : (so || si), on = atual === so || atual === si;
     return `<a class="nav ${on ? 'on' : ''} ${n === 'RV' ? 'rv' : ''}" href="#${alvo}" data-act="pg" data-pg="${alvo}">${n}</a>`;
-  }).join('') + `</div><span class="acoes"><button class="btn-top" data-act="apres" title="Abre a página aberta como slides, no recorte marcado"><span class="lg">Modo Apresentação</span><span class="sm">Slides</span></button>
+  }).join('')) + `</div><span class="acoes"><button class="btn-top" data-act="apres" title="Abre a página aberta como slides, no recorte marcado"><span class="lg">Modo Apresentação</span><span class="sm">Slides</span></button>
     <button class="btn-top" data-act="pdf" title="Gera a apresentação em PDF da página aberta, no recorte marcado">⤓ PDF</button>
     <button class="btn-top" data-act="excel" title="Baixa um Excel com as tabelas desta página, no recorte marcado">⤓ Excel</button></span>`;
 }
 function opcoes(k) {
+  if (MODO === 'ex') return exOpcoes(k);
   let ids = dic[k].map((_, i) => i);
   if (k === 'marca') ids = ids.filter(i => i !== TODAS);
   if (k === 'segmento') {
@@ -463,26 +480,27 @@ function opcoes(k) {
 }
 function fbar() {
   const ativo = FILTROS.some(([k]) => S.f[k].size);
-  document.getElementById('fbar').innerHTML = `<label class="cut">Mês de corte <select data-act="corte">${ate(D.ult26).map(m => `<option value="${m}" ${m === S.corte ? 'selected' : ''}>${mes(m)}/26${parcialDe('base') && parcialDe('base').mes === m ? ' (parcial)' : ''}</option>`).join('')}</select></label>` +
-    (DSI ? `<span class="modo" role="tablist" aria-label="Perna"><button data-act="modo" data-m="so" class="${MODO === 'so' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'so'}">Sell Out</button><button data-act="modo" data-m="si" class="${MODO === 'si' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'si'}">Sell In</button></span>` : '') +
+  document.getElementById('fbar').innerHTML = (MODO === 'ex' ? exSeletorMes() : `<label class="cut">Mês de corte <select data-act="corte">${ate(D.ult26).map(m => `<option value="${m}" ${m === S.corte ? 'selected' : ''}>${mes(m)}/26${parcialDe('base') && parcialDe('base').mes === m ? ' (parcial)' : ''}</option>`).join('')}</select></label>`) +
+    (DSI || DEX ? `<span class="modo" role="tablist" aria-label="Perna"><button data-act="modo" data-m="so" class="${MODO === 'so' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'so'}">Sell Out</button>${DSI ? `<button data-act="modo" data-m="si" class="${MODO === 'si' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'si'}">Sell In</button>` : ''}${DEX ? `<button data-act="modo" data-m="ex" class="${MODO === 'ex' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'ex'}">Execução Diretos</button>` : ''}</span>` : '') +
     FILTROS.map(([k, n]) => {
       const st = S.f[k];
-      const txt = st.size === 1 ? (k === 'grp' || k === 'executivo' ? tit(dic[k][[...st][0]]) : esc(dic[k][[...st][0]])) : n;
+      const txt = st.size === 1 ? nomeFiltro(k, [...st][0]) : n;
       return `<button class="chip ${st.size ? 'on' : ''}" data-act="pop" data-k="${k}">${txt}${st.size > 1 ? ` <span class="n">${st.size}</span>` : ''} <span aria-hidden="true">▾</span></button>`;
     }).join('');
   // faixa "Filtros:": cada seleção vira uma etiqueta que sai com um clique
-  const tags = FILTROS.flatMap(([k, n]) => [...S.f[k]].map(i => `<button class="ftag" data-act="rmf" data-k="${k}" data-i="${i}" title="Tirar este filtro">${n}: ${k === 'grp' || k === 'executivo' ? tit(dic[k][i]) : esc(dic[k][i])} <span aria-hidden="true">×</span></button>`));
+  const tags = FILTROS.flatMap(([k, n]) => [...S.f[k]].map(i => `<button class="ftag" data-act="rmf" data-k="${k}" data-i="${i}" title="Tirar este filtro">${n}: ${nomeFiltro(k, i)} <span aria-hidden="true">×</span></button>`));
   const fs = document.getElementById('fsel');
   if (fs) fs.innerHTML = `<span class="fsel-lab">Filtros:</span><div class="fsel-box">${tags.join('') || '<span class="vazio">Nenhum filtro: visão completa da regional.</span>'}</div>
     <button class="chip clear" data-act="limpar" ${ativo ? '' : 'disabled'}>Limpar</button>`;
 }
+const nomeFiltro = (k, i) => (MODO !== 'ex' && (k === 'grp' || k === 'executivo') ? tit(dic[k][i]) : esc(dic[k][i]));   // Execução: nomes como no PBI
 let POP = null;
 function abrirPop(k, btn) {
   fecharPop();
   const nome = FILTROS.find(f => f[0] === k)[1], ids = opcoes(k);
   const el = document.createElement('div'); el.className = 'pop';
   el.innerHTML = `<header>${nome}<button data-act="popclear">Limpar</button></header>${ids.length > 8 ? '<input type="search" placeholder="Buscar">' : ''}
-    <div class="opts">${ids.map(i => `<label class="opt"><input type="checkbox" value="${i}" ${S.f[k].has(i) ? 'checked' : ''}>${k === 'grp' || k === 'executivo' ? tit(dic[k][i]) : esc(dic[k][i])}</label>`).join('')}</div>`;
+    <div class="opts">${ids.map(i => `<label class="opt"><input type="checkbox" value="${i}" ${S.f[k].has(i) ? 'checked' : ''}>${nomeFiltro(k, i)}</label>`).join('')}</div>`;
   document.body.appendChild(el);
   const r = btn.getBoundingClientRect();
   el.style.top = (r.bottom + 8) + 'px'; el.style.left = Math.max(8, Math.min(r.left, innerWidth - el.offsetWidth - 8)) + 'px';
@@ -519,7 +537,8 @@ document.addEventListener('click', e => {
     if ((t.dataset.k === 'scsel' || t.dataset.k === 'clsel' || t.dataset.k.startsWith('sel')) && t.dataset.v) { const d = document.querySelector('#app .det'); if (d) { const off = document.querySelector('.gnav').offsetHeight + document.querySelector('.fbar').offsetHeight + 12; scrollTo({top: d.getBoundingClientRect().top + scrollY - off}); } }
   }
   else if (act === 'pg') { e.preventDefault(); irPara(t.dataset.pg); }
-  else if (act === 'modo') { if (t.dataset.m !== MODO) irPara(t.dataset.m === 'si' ? 'si-inicio' : 'inicio'); }
+  else if (act === 'modo') { if (t.dataset.m !== MODO) irPara(t.dataset.m === 'si' ? 'si-inicio' : t.dataset.m === 'ex' ? 'ex-inicio' : 'inicio'); }
+  else if (act === 'exir') { e.preventDefault(); S.ui[t.dataset.k] = t.dataset.v; irPara(t.dataset.pg); exRolarDet(t.dataset.k, t.dataset.v); }   // Execução: abre outra página já com a aba ou o item escolhido
   else if (act === 'excel') exportarExcel(t);
   else if (act === 'csv') baixarCSV(t);
   else if (act === 'sair') { e.preventDefault(); try { localStorage.removeItem('dash-geral-cto-chave'); } catch (x) { /* nada guardado */ } location.replace(location.pathname); }
@@ -553,10 +572,10 @@ let LARG = innerWidth, tRz = null;
 addEventListener('resize', () => { clearTimeout(tRz); tRz = setTimeout(() => { if (Math.abs(innerWidth - LARG) > 60) { LARG = innerWidth; render(false); } }, 200); });
 
 /* ---------- páginas (mesma ordem das abas do Dash Power Query) ---------- */
-function hero(eyebrow, t1, t2, side = '') {
-  return `<section class="hero${eyebrow ? ' sm' : ''}"><div>${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ''}<h1>${t1} <span>${t2}</span></h1>${faixaFontes()}</div>${side}</section>`;
+function hero(eyebrow, t1, t2, side = '', sub = '') {   // sub: frase descritiva abaixo do título, quando a parte cinza do título traz a conclusão
+  return `<section class="hero${eyebrow ? ' sm' : ''}"><div>${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ''}<h1>${t1} <span>${t2}</span></h1>${sub ? `<p class="hero-sub">${sub}</p>` : ''}${faixaFontes()}</div>${side}</section>`;
 }
-const recorteResumo = () => FILTROS.filter(([k]) => S.f[k].size).map(([k, n]) => `${n}: ${[...S.f[k]].map(i => tit(dic[k][i])).join(', ')}`).join(' · ');
+const recorteResumo = () => FILTROS.filter(([k]) => S.f[k].size).map(([k, n]) => `${n}: ${[...S.f[k]].map(i => (MODO === 'ex' ? esc(dic[k][i]) : tit(dic[k][i]))).join(', ')}`).join(' · ');
 function recorteTxt() { return ''; }   // o recorte aparece na faixa "Filtros:" do topo, nos slides e no Excel
 
 function pgInicio() {
@@ -1153,7 +1172,7 @@ function pgDepara() {
 }
 
 function tabelaFontes() {
-  const L = (DSO.atualizacao || {}).fontes || []; if (!L.length) return '';
+  const L = ((DSO.atualizacao || {}).fontes || []).filter(f => f.id !== 'execucao'); if (!L.length) return '';   // De-para do Sell Out: a fonte da Execução Diretos tem a própria faixa "Dados de"
   const sit = f => ({ok: ['Em dia', 'up'], parc: [`Em dia, ${f.ate_txt} parcial`, 'parc'], warn: [faltaFonte(f), 'warn'], flat: ['Encerrada', 'flat']})[estadoFonte(f)];
   return `<div class="card"><p class="eyebrow">Data de cada fonte</p><div class="tw"><table><thead><tr><th class="l">Fonte</th><th class="l">Extraída em</th><th class="l">Dado até</th><th class="l">Último mês fechado</th><th class="l">Situação</th><th class="l">O que é</th></tr></thead><tbody>` +
     L.map(f => `<tr><td class="l b">${esc(f.nome)}</td><td class="l">${esc(f.extraido ? f.extraido + (f.hora ? ' ' + f.hora : '') : '-')}</td><td class="l">${esc(f.ate_dia + (f.parcial ? ` (${f.ate_txt} parcial)` : ''))}</td><td class="l">${esc(f.fechado_txt || f.ate_txt)}</td><td class="l">${selo(sit(f))}</td><td class="l txt">${esc(f.obs || '')}</td></tr>`).join('') +
@@ -1576,6 +1595,619 @@ function pgSiMes() {
   return h;
 }
 
+/* ======================= Perna Execução Diretos: MSL das lojas das contas de atendimento direto (Power BI Execution Report) =======================
+   Base (arquivo cifrado): f = [mês, loja, SKU, Target, Compliance] por mês x loja x SKU, só Target > 0; auditorias = dias com auditoria por loja e mês.
+   MSL = soma do Compliance / soma do Target, nunca média de %. Leitura oficial na janela de 3 meses (mês vigente e os 2 anteriores), contra a mesma
+   janela do ano anterior; a curva mês a mês serve só para tendência. Falta = Target menos Compliance. Patamar do PBI: loja com MSL acima de 65%.
+   Nomes de loja, rede, executivo e SKU vêm só do arquivo cifrado: este código só desenha. */
+function montarDEX(e) {
+  if (!e || !Array.isArray(e.f) || !e.f.length || !Array.isArray(e.lojas) || !Array.isArray(e.skus) || !Array.isArray(e.meses) || !e.meses.length) return null;
+  const ok = (r, n, lim) => Array.isArray(r) && r.length >= n && lim.every((x, j) => Number.isInteger(r[j]) && r[j] >= 0 && r[j] < x);
+  if (!e.lojas.every(l => l && typeof l === 'object') || !e.skus.every(s => s && typeof s === 'object')
+    || !e.f.every(r => ok(r, 5, [e.meses.length, e.lojas.length, e.skus.length]) && r[3] > 0 && r[4] >= 0 && r[4] <= r[3])) return null;   // base fora do formato: a perna sai do site
+  const vazio = '(sem dado)', uniq = a => [...new Set(a)].sort((x, y) => String(x).localeCompare(String(y), 'pt-BR'));
+  const dic = {}, L = {}, K = {};
+  ['bandeira', 'executivo', 'uf', 'canal', 'ambiente'].forEach(k => { const v = e.lojas.map(l => String(l[k] || vazio)); dic[k] = uniq(v); L[k] = v.map(x => dic[k].indexOf(x)); });
+  ['marca', 'segmento'].forEach(k => { const v = e.skus.map(s => String(s[k] || vazio)); dic[k] = uniq(v); K[k] = v.map(x => dic[k].indexOf(x)); });
+  const segMarca = []; K.segmento.forEach((g, j) => { if (segMarca[g] === undefined) segMarca[g] = K.marca[j]; });   // cada segmento pertence a uma marca
+  const meses = e.meses.map(String), fx = e.fonte || {}, tem = new Uint8Array(meses.length);
+  e.f.forEach(r => { if (r[3] > 0) tem[r[0]] = 1; });
+  const ult = tem.lastIndexOf(1), da = String(fx.dado_ate || '');
+  // dias de auditoria: por loja e mês (audN) e, para o filtro de marca e segmento, a máscara dos dias de cada segmento que não foi auditado em todos os dias (audSeg)
+  const aud = (Array.isArray(e.auditorias) ? e.auditorias : []).filter(r => ok(r, 3, [meses.length, e.lojas.length, 32])), audN = new Map();
+  aud.forEach(([m, l, n]) => audN.set(m * 100000 + l, n));
+  const as = e.auditorias_seg, audSeg = as && Array.isArray(as.segs) && Array.isArray(as.f) ? new Map() : null;
+  if (audSeg) { const gi = as.segs.map(s => dic.segmento.indexOf(String(s))); as.f.forEach(r => { if (ok(r, 4, [meses.length, e.lojas.length, gi.length, 2 ** 30]) && gi[r[2]] >= 0) audSeg.set((r[0] * 100000 + r[1]) * 1000 + gi[r[2]], r[3]); }); }
+  const nNome = new Map(); e.lojas.forEach(l => nNome.set(String(l.nome), (nNome.get(String(l.nome)) || 0) + 1));   // nome de loja repetido na base: a tela mostra o código junto
+  return {gerado: DSO.gerado, meses, M: meses.length, tem, parc: meses.indexOf(String(fx.parcial || '')), ateDia: da.length >= 10 ? `${da.slice(8, 10)}/${da.slice(5, 7)}` : '',
+    lojas: e.lojas, skus: e.skus, dic, L, K, segMarca, f: e.f, aud, audN, audSeg, nomeDup: e.lojas.map(l => nNome.get(String(l.nome)) > 1),
+    vis: e.visitas && Array.isArray(e.visitas.f) && Array.isArray(e.visitas.campos) ? e.visitas : null, fonte: fx,
+    corte: +meses[ult >= 0 ? ult : meses.length - 1], ult26: +meses[meses.length - 1],
+    rodape: ['Reckitt · Governança CTO · Execução das contas de atendimento direto (MSL das lojas).', `Fonte: ${fx.nome || 'Power BI Execution Report'}${fx.pagina ? ', página ' + fx.pagina : ''}. Uso interno.`]};
+}
+const EX_CTO = ['VEJA', 'VANISH', 'HARPIC', 'FINISH'], EX_PAT = 0.65 + 1e-9, EZ = {t: 0, c: 0};   // patamar oficial do PBI: loja com MSL acima de 65%
+const exEhCTO = nome => EX_CTO.includes(String(nome).toUpperCase());
+const exMarcaNome = i => { const m = String(dic.marca[i]); return `<span class="${mkCls(m.toUpperCase())}">${esc(m)}</span>${exEhCTO(m) ? ' <small class="tag" data-xls="fora">CTO</small>' : ''}`; };
+const exSegNome = g => `${esc(dic.marca[D.segMarca[g]])} · ${esc(dic.segmento[g])}`;
+const exLojaNome = (i, semCod) => esc(D.lojas[i].nome).replace(/_/g, ' · ') + (!semCod && D.nomeDup[i] ? ` <small class="ex-codl">${esc(D.lojas[i].id)}</small>` : '');   // mesmo nome em mais de uma loja: o código junto (tela, slide e Excel)
+const exSkuNome = i => esc(D.skus[i].desc || D.skus[i].cod);
+const msl = o => (o && o.t > 0 ? o.c / o.t : NaN);
+const exRot = i => (i >= 0 && i < D.M ? `${mes(+D.meses[i].slice(4))}/${D.meses[i].slice(2, 4)}${i === D.parc ? '*' : ''}` : '');
+const ppTxt = (d, sem) => (isFinite(d) ? `${d >= 0.0005 ? '+' : ''}${nf1.format(Math.abs(d) < 0.0005 ? 0 : d * 100)}${sem ? '' : ' pp'}` : '');
+const vppt = d => (isFinite(d) ? `<span class="vr ${cls(d) || 'flat'}">${ppTxt(d)}</span>` : '');   // variação em pp nas tabelas
+const n2p = x => (isFinite(x) ? nf2.format(x * 100) + '%' : '');
+const pEx = x => (isFinite(x) && Math.abs(x * 100 - 65) < 0.05 ? n2p(x) : p1(x));   // MSL de loja colado no patamar: 65,03% não aparece como 65,0% ao lado do selo Acima de 65%
+const exFaixa = m => (!isFinite(m) ? '<span class="vr flat">Sem auditoria na janela</span>' : m > EX_PAT ? '<span class="vr up">Acima de 65%</span>' : m >= 0.5 ? '<span class="vr warn">Entre 50% e 65%</span>' : '<span class="vr down">Abaixo de 50%</span>');
+const EXC = {loja: r => r[1], sku: r => r[2], marca: r => D.K.marca[r[2]], segmento: r => D.K.segmento[r[2]],
+  bandeira: r => D.L.bandeira[r[1]], executivo: r => D.L.executivo[r[1]], uf: r => D.L.uf[r[1]], canal: r => D.L.canal[r[1]], ambiente: r => D.L.ambiente[r[1]]};
+
+/* recorte: lojas (cliente, executivo, UF, canal, ambiente) e SKUs (marca, segmento) */
+let EXF = [];
+function exFiltrar() {
+  if (D.meses.indexOf(String(S.corte)) < 0) S.corte = D.corte;   // mês vigente fora da base (link antigo): volta ao último mês com dado
+  const lk = ['bandeira', 'executivo', 'uf', 'canal', 'ambiente'].filter(k => S.f[k].size);
+  const okL = D.lojas.map((_, i) => lk.every(k => S.f[k].has(D.L[k][i])));
+  const okS = D.skus.map((_, i) => (!S.f.marca.size || S.f.marca.has(D.K.marca[i])) && (!S.f.segmento.size || S.f.segmento.has(D.K.segmento[i])));
+  EXF = D.f.filter(r => okL[r[1]] && okS[r[2]]);
+}
+function exOpcoes(k) {
+  let ids = dic[k].map((_, i) => i);
+  if (k === 'segmento') { const mk = gMarcas(); ids = ids.filter(g => !mk || mk.has(D.segMarca[g])); }
+  return ids.sort((a, b) => String(dic[k][a]).localeCompare(String(dic[k][b]), 'pt-BR'));
+}
+function exFaixaTxt(L) {   // "ago a out/26*", "dez/25 a fev/26" ou "out/26*"
+  if (!L.length) return '';
+  const a = L[0], b = L[L.length - 1];
+  if (a === b) return exRot(a);
+  return `${D.meses[a].slice(0, 4) === D.meses[b].slice(0, 4) ? mes(+D.meses[a].slice(4)) : exRot(a)} a ${exRot(b)}`;
+}
+function exJanela() {   // mês vigente e os 2 anteriores; comparação = os mesmos meses do ano anterior; ano = jan até o mês vigente
+  let v = D.meses.indexOf(String(S.corte)); if (v < 0) v = D.meses.indexOf(String(D.corte));
+  const Y = +D.meses[v].slice(0, 4), menos1 = i => D.meses.indexOf(`${+D.meses[i].slice(0, 4) - 1}${D.meses[i].slice(4)}`);
+  const idx = [v - 2, v - 1, v].filter(i => i >= 0), antT = idx.map(menos1), ant = antT.filter(i => i >= 0);
+  const anoI = D.meses.map((_, i) => i).filter(i => +D.meses[i].slice(0, 4) === Y && i <= v), anoAT = anoI.map(menos1), anoAnt = anoAT.filter(i => i >= 0);
+  const temAnt = ant.length === idx.length && ant.some(i => D.tem[i]), temAnoAnt = anoAnt.length === anoI.length && anoAnt.some(i => D.tem[i]);
+  const temY0 = D.meses.some((m, i) => +m.slice(0, 4) === Y - 1 && D.tem[i]);   // a base tem algum mês do ano anterior (mês vigente em 2025: não tem 2024)
+  return {v, Y, idx, ant, temAnt, ano: anoI, anoAnt, temAnoAnt, temY0, parc: idx.includes(D.parc), a5: String(Y - 1).slice(2), a6: String(Y).slice(2),
+    txt: exFaixaTxt(idx), antTxt: temAnt ? exFaixaTxt(ant) : String(Y - 1), anoTxt: exFaixaTxt(anoI), anoAntTxt: temAnoAnt ? exFaixaTxt(anoAnt) : String(Y - 1)};
+}
+const exSeletorMes = () => `<label class="cut">Mês vigente <select data-act="corte" title="Muda a janela de 3 meses do site inteiro">${D.meses.map((m, i) => `<option value="${m}" ${+m === +S.corte ? 'selected' : ''}>${exRot(i).replace('*', '')}${i === D.parc ? ' (parcial)' : !D.tem[i] ? ' (sem auditoria)' : ''}</option>`).join('')}</select></label>`;
+
+/* motor: somas de Target e Compliance */
+function exSoma(idx, chave, sub) {   // Map chave -> {t, c} nos meses idx
+  const ms = new Uint8Array(D.M); idx.forEach(i => { ms[i] = 1; });
+  const out = new Map();
+  for (const r of EXF) {
+    if (!ms[r[0]] || (sub && !sub(r))) continue;
+    const k = chave ? chave(r) : '_'; let o = out.get(k); if (!o) out.set(k, o = {t: 0, c: 0});
+    o.t += r[3]; o.c += r[4];
+  }
+  return out;
+}
+const exUm = (idx, sub) => exSoma(idx, null, sub).get('_') || EZ;
+function exMeses(chave, sub) {   // Map chave -> {t, c} mês a mês (um valor por mês da base)
+  const out = new Map();
+  for (const r of EXF) {
+    if (sub && !sub(r)) continue;
+    const k = chave ? chave(r) : '_'; let o = out.get(k); if (!o) out.set(k, o = {t: new Float64Array(D.M), c: new Float64Array(D.M)});
+    o.t[r[0]] += r[3]; o.c[r[0]] += r[4];
+  }
+  return out;
+}
+const exSerie = sub => exMeses(null, sub).get('_') || {t: new Float64Array(D.M), c: new Float64Array(D.M)};
+const exFiltroSku = () => !!(S.f.marca.size || S.f.segmento.size);
+function exAudPor(idx, sub) {   // dias de auditoria por loja nos meses idx; com filtro de marca ou segmento (ou sub), só os dias em que algum SKU do recorte foi auditado
+  const ms = new Set(idx), out = new Map();
+  if ((!exFiltroSku() && !sub) || !D.audSeg) { for (const [m, l, n] of D.aud) if (ms.has(m)) out.set(l, (out.get(l) || 0) + n); return out; }
+  const mk = new Map();   // mês x loja -> dias (bit j = j-ésimo dia de auditoria da loja no mês) dos segmentos do recorte; segmento sem máscara = todos os dias
+  for (const r of EXF) {
+    if (!ms.has(r[0]) || (sub && !sub(r))) continue;
+    const k = r[0] * 100000 + r[1], x = D.audSeg.get(k * 1000 + D.K.segmento[r[2]]);
+    mk.set(k, (mk.get(k) || 0) | (x === undefined ? 2 ** (D.audN.get(k) || 0) - 1 : x));
+  }
+  mk.forEach((m, k) => { let c = 0; for (let b = m; b; b &= b - 1) c++; const l = k % 100000; out.set(l, (out.get(l) || 0) + c); });
+  return out;
+}
+function exLinhas(J, chave, sub) {   // uma linha por chave: janela e mesma janela do ano anterior, variação em pp, faltas, peso nas faltas e impacto no MSL total
+  const A = exSoma(J.idx, chave, sub), B = J.temAnt ? exSoma(J.ant, chave, sub) : new Map();
+  let tt = 0, tc = 0; A.forEach(o => { tt += o.t; tc += o.c; });
+  const mt = tt > 0 ? tc / tt : NaN, ft = tt - tc;
+  return [...new Set([...A.keys(), ...B.keys()])].map(k => {
+    const a = A.get(k) || EZ, b = B.get(k) || EZ, m = msl(a), mb = msl(b);
+    return {k, a, b, m, mb, d: m - mb, f: a.t > 0 ? a.t - a.c : NaN, peso: ft > 0 && a.t > 0 ? (a.t - a.c) / ft : NaN, imp: tt > 0 && a.t > 0 ? (a.c - mt * a.t) / tt : NaN};
+  });
+}
+function exTotal(L) {
+  const a = {t: 0, c: 0}, b = {t: 0, c: 0}; L.forEach(x => { a.t += x.a.t; a.c += x.a.c; b.t += x.b.t; b.c += x.b.c; });
+  const m = msl(a), mb = msl(b); return {k: -1, a, b, m, mb, d: m - mb, f: a.t > 0 ? a.t - a.c : NaN, peso: a.t - a.c > 0 ? 1 : NaN, imp: NaN};
+}
+const ZL = () => ({n: 0, acima: 0, aud: 0, nb: 0, acimab: 0, audb: 0});
+function exLojasPor(J, gk, sub) {   // por grupo de loja: lojas auditadas, lojas acima de 65% e dias de auditoria, na janela e na mesma janela do ano anterior
+  const A = exSoma(J.idx, EXC.loja, sub), B = J.temAnt ? exSoma(J.ant, EXC.loja, sub) : new Map(), UA = exAudPor(J.idx, sub), UB = exAudPor(J.ant, sub);
+  const out = new Map(), g = k => { let o = out.get(k); if (!o) out.set(k, o = ZL()); return o; };
+  A.forEach((o, l) => { if (!(o.t > 0)) return; const x = g(gk(l)); x.n++; if (o.c / o.t > EX_PAT) x.acima++; x.aud += UA.get(l) || 0; });
+  B.forEach((o, l) => { if (!(o.t > 0)) return; const x = g(gk(l)); x.nb++; if (o.c / o.t > EX_PAT) x.acimab++; x.audb += UB.get(l) || 0; });
+  return out;
+}
+function exResumo(J, sub) {   // os números da janela no recorte (e numa rede, executivo ou loja, com sub)
+  const a = exUm(J.idx, sub), b = J.temAnt ? exUm(J.ant, sub) : EZ, lj = exLojasPor(J, () => '_', sub).get('_') || ZL();
+  const y = exUm(J.ano, sub), yb = J.temAnoAnt ? exUm(J.anoAnt, sub) : EZ;
+  return {a, b, m: msl(a), mb: msl(b), d: msl(a) - msl(b), f: a.t - a.c, fb: J.temAnt ? b.t - b.c : NaN, n: lj.n, nb: J.temAnt ? lj.nb : NaN, acima: lj.acima, acimab: lj.acimab,
+    pa: lj.n ? lj.acima / lj.n : NaN, pb: J.temAnt && lj.nb ? lj.acimab / lj.nb : NaN, aud: lj.aud, audb: J.temAnt ? lj.audb : NaN, my: msl(y), myb: msl(yb)};
+}
+function exLojasSku(J, sub) {   // por SKU: lojas auditadas e lojas onde faltou na janela
+  const A = exSoma(J.idx, r => r[2] * 10000 + r[1], sub), out = new Map();
+  A.forEach((o, k) => { if (!(o.t > 0)) return; const s = Math.floor(k / 10000); let x = out.get(s); if (!x) out.set(s, x = {aud: 0, falta: 0}); x.aud++; if (o.t - o.c > 0) x.falta++; });
+  return out;
+}
+function exOrdemMarcas(L) {   // as 4 marcas do CTO primeiro (Veja, Vanish, Harpic, Finish), depois as demais pelo Target da janela
+  const p = x => { const i = EX_CTO.indexOf(String(dic.marca[x.k]).toUpperCase()); return i < 0 ? 9 : i; };
+  return L.sort((a, b) => p(a) - p(b) || b.a.t - a.a.t || b.b.t - a.b.t);
+}
+
+/* componentes */
+function exKpis(R, J, quais) {
+  const card = (lab, val, d, sub) => `<div class="card kpi"><div class="lab">${lab}</div><div class="val">${val}</div><div class="sub dv">${d}<span>${sub}</span></div></div>`;
+  const ant = J.antTxt, neutro = x => (isFinite(x) ? `<span class="vbig flat">${pc(x)}</span>` : ''), pv = x => (isFinite(x) ? p1(x) : 'sem dado'), pm = x => (isFinite(x) ? pEx(x) : 'sem dado');
+  const C = [
+    () => card(`MSL · ${esc(J.txt)}`, pm(R.m), vpp(R.d), J.temAnt && isFinite(R.mb) ? `contra ${p1(R.mb)} em ${esc(ant)}` : 'sem a mesma janela no ano anterior'),
+    () => card('Lojas acima de 65%', pv(R.pa), vpp(R.pa - R.pb), `${n0(R.acima)} de ${n0(R.n)} lojas auditadas${J.temAnt && isFinite(R.pb) ? ` · ${p1(R.pb)} em ${esc(ant)}` : ''}`),
+    () => card('Lojas auditadas', n0(R.n), vbig(varr(R.n, R.nb)), J.temAnt ? `contra ${n0(R.nb)} em ${esc(ant)}` : 'na janela'),
+    () => card('Auditorias', n0(R.aud), vbig(varr(R.aud, R.audb)), `${exFiltroSku() ? 'dias em que a marca ou o segmento do recorte foi auditado' : 'dias de auditoria'}, somados loja a loja${J.temAnt ? `, contra ${n0(R.audb)}` : ''}`),
+    () => card('Faltas', n0(R.f), neutro(varr(R.f, R.fb)), `SKUs do MSL não encontrados na loja${J.temAnt ? ` · ${n0(R.fb)} em ${esc(ant)}` : ''}`),
+    () => card(`MSL no ano · ${esc(J.anoTxt)}`, pv(R.my), vpp(R.my - R.myb), J.temAnoAnt && isFinite(R.myb) ? `contra ${p1(R.myb)} em ${esc(J.anoAntTxt)}` : 'sem o mesmo período no ano anterior')];
+  const q = quais || [0, 1, 2, 3, 4, 5];
+  return `<div class="grid ${q.length === 4 ? 'g4' : 'g3'}">${q.map(i => C[i]()).join('')}</div>`;
+}
+function exCurva(o, J, alto = SLIDE ? 330 : 240) {   // MSL % mês a mês: ano anterior cinza, ano do mês vigente rosa; a janela sombreada; eixo justo nos dados
+  const Y = J.Y, W = Math.round(Math.max(240, Math.min(1180, larguraCard()))), H = alto;
+  const val = (y, m) => { const i = D.meses.indexOf(`${y}${String(m).padStart(2, '0')}`); return i >= 0 && i <= J.v && o.t[i] > 0 ? o.c[i] / o.t[i] : NaN; };
+  const s0 = [], s1 = [];
+  for (let m = 1; m <= 12; m++) { s0.push(val(Y - 1, m)); s1.push(val(Y, m)); }
+  const xs = [...s0, ...s1].filter(isFinite).map(x => x * 100), tem0 = s0.some(isFinite), temVar = s0.some((a, j) => isFinite(a) && isFinite(s1[j]));
+  if (!xs.length) return '<div class="empty">Sem auditoria neste recorte.</div>';
+  const pl = 40, pr = 12, pt = 24, gw = (W - pl - pr) / 12, comVal = gw >= 40, comVar = gw >= 46, pb = comVar ? 50 : 28;
+  const lo = Math.min(...xs), hi = Math.max(...xs), folga = Math.max(2, (hi - lo) * 0.15);
+  let y0 = Math.max(0, Math.floor((lo - folga) / 5) * 5); const y1 = Math.min(100, Math.ceil((hi + folga) / 5) * 5); if (y1 - y0 < 10) y0 = Math.max(0, y1 - 10);
+  const passo = y1 - y0 > 40 ? 20 : y1 - y0 > 20 ? 10 : 5, px = m => pl + (m - 0.5) * gw, py = x => pt + (y1 - x * 100) / (y1 - y0) * (H - pt - pb);
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="MSL ${tem0 ? `${Y - 1} e ` : ''}${Y} por mês">`;
+  const jm = J.idx.filter(i => +D.meses[i].slice(0, 4) === Y).map(i => +D.meses[i].slice(4));
+  if (jm.length) s += `<rect x="${(pl + (Math.min(...jm) - 1) * gw + 2).toFixed(1)}" y="${pt - 18}" width="${((Math.max(...jm) - Math.min(...jm) + 1) * gw - 4).toFixed(1)}" height="${(H - pb - pt + 18).toFixed(1)}" rx="10" fill="#F5F5F7"/>`;
+  for (let g = y0; g <= y1 + 1e-9; g += passo) { const y = py(g / 100).toFixed(1); s += `<line x1="${pl}" x2="${W - pr}" y1="${y}" y2="${y}" stroke="#ECECEF"/><text x="${pl - 6}" y="${(+y + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="#86868B">${g}%</text>`; }
+  const trechos = (L, ok) => { const out = []; let cur = []; L.forEach((x, j) => { if (isFinite(x) && ok(j + 1)) cur.push([j + 1, x]); else { if (cur.length) out.push(cur); cur = []; } }); if (cur.length) out.push(cur); return out; };
+  const poly = (pts, cor, w, extra = '') => (pts.length > 1 ? `<polyline points="${pts.map(([m, x]) => px(m).toFixed(1) + ',' + py(x).toFixed(1)).join(' ')}" fill="none" stroke="${cor}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round" ${extra}/>` : '');
+  trechos(s0, () => true).forEach(p => { s += poly(p, '#D2D2D7', 2.5); });
+  s0.forEach((x, j) => { if (isFinite(x)) s += `<circle cx="${px(j + 1).toFixed(1)}" cy="${py(x).toFixed(1)}" r="3" fill="#D2D2D7"/>`; });
+  const pm = D.parc >= 0 && D.parc <= J.v && +D.meses[D.parc].slice(0, 4) === Y ? +D.meses[D.parc].slice(4) : 0;   // mês parcial no ano rosa: ponto vazado, ligado por tracejado
+  trechos(s1, m => m !== pm).forEach(p => { s += poly(p, '#FF007F', 3); });
+  if (pm > 1 && isFinite(s1[pm - 1]) && isFinite(s1[pm - 2])) s += poly([[pm - 1, s1[pm - 2]], [pm, s1[pm - 1]]], '#FF007F', 2, 'stroke-dasharray="4 4"');
+  s1.forEach((x, j) => {
+    if (!isFinite(x)) return; const m = j + 1, cx = px(m).toFixed(1), cy = py(x).toFixed(1);
+    s += m === pm ? `<circle cx="${cx}" cy="${cy}" r="4.5" fill="#FFFFFF" stroke="#FF007F" stroke-width="2"/>` : `<circle cx="${cx}" cy="${cy}" r="4" fill="#FF007F"/>`;
+    if (comVal) s += `<text class="vl" x="${cx}" y="${(+cy - 10).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="600" fill="#1D1D1F">${nf1.format(x * 100)}</text>`;
+  });
+  for (let m = 1; m <= 12; m++) {
+    const x0 = px(m).toFixed(1), a = s0[m - 1], b = s1[m - 1], d = b - a, parc = m === pm;
+    s += `<text x="${x0}" y="${H - (comVar ? 30 : 8)}" text-anchor="middle" font-size="11" fill="#6E6E73">${gw >= 34 ? MESES[m - 1] : MESES[m - 1][0]}${parc ? '*' : ''}</text>`;
+    if (comVar && isFinite(d)) s += `<text x="${x0}" y="${H - 8}" text-anchor="middle" font-size="12" font-weight="700" fill="${parc || Math.abs(d) < 0.0005 ? '#6E6E73' : d > 0 ? '#1D7A34' : '#D70015'}">${ppTxt(d, true)}</text>`;
+    const tt = `<b>${MESES[m - 1]}${parc ? '*' : ''}</b> · ${tem0 ? `${Y - 1}: ${isFinite(a) ? p1(a) : 'sem dado'} · ` : ''}${Y}${parc ? ` parcial até ${D.ateDia}` : ''}: ${isFinite(b) ? p1(b) : 'sem dado'}${isFinite(d) ? ' · ' + ppTxt(d) : ''}`;
+    s += `<rect x="${(pl + (m - 1) * gw).toFixed(1)}" y="0" width="${gw.toFixed(1)}" height="${H}" fill="transparent" data-tip="${esc(tt)}"/>`;
+  }
+  return s + `</svg><div class="legend">${tem0 ? `<span><i style="background:#D2D2D7"></i>${Y - 1}</span>` : ''}<span><i style="background:#FF007F"></i>${Y} até ${esc(exRot(J.v))}</span>` +
+    (jm.length ? `<span><i style="background:#F5F5F7;box-shadow:inset 0 0 0 1px #D2D2D7"></i>Janela ${esc(J.txt)}</span>` : '') + (comVar && temVar ? '<span>Embaixo, a variação contra o ano anterior em pp</span>' : '') +
+    (pm ? `<span class="parc-nota">* ${esc(exRot(D.parc).replace('*', ''))} parcial até ${esc(D.ateDia)}.</span>` : '') + '</div>';
+}
+function exSpark(o, J) {   // curva do ano numa linha: ano anterior cinza, ano do mês vigente rosa (MSL %)
+  if (!o) return '';
+  const W = 132, H = 34, Y = J.Y, px = m => 4 + (m - 1) * (W - 8) / 11;
+  const val = (y, m) => { const i = D.meses.indexOf(`${y}${String(m).padStart(2, '0')}`); return i >= 0 && i <= J.v && o.t[i] > 0 ? o.c[i] / o.t[i] : NaN; };
+  const q0 = [], q1 = [];
+  for (let m = 1; m <= 12; m++) { const a = val(Y - 1, m), b = val(Y, m); if (isFinite(a)) q0.push([m, a]); if (isFinite(b)) q1.push([m, b]); }
+  const xs = [...q0, ...q1].map(p => p[1]); if (!xs.length) return '';
+  let lo = Math.min(...xs), hi = Math.max(...xs); if (hi - lo < 0.06) { const c = (hi + lo) / 2; lo = c - 0.03; hi = c + 0.03; }
+  const py = x => (H - 3 - (x - lo) / (hi - lo) * (H - 6)).toFixed(1);
+  const linha = (pts, cor) => (pts.length > 1 ? `<polyline points="${pts.map(([m, x]) => px(m).toFixed(1) + ',' + py(x)).join(' ')}" fill="none" stroke="${cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+    : pts.length ? `<circle cx="${px(pts[0][0]).toFixed(1)}" cy="${py(pts[0][1])}" r="2.5" fill="${cor}"/>` : '');
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${linha(q0, '#D2D2D7')}${linha(q1, '#FF007F')}</svg>`;
+}
+function exConclusao(L, nomeFn, J, plural) {   // a parte cinza do título: quantas sobem e caem e quem mais cai (ou o maior e o menor MSL, sem o ano anterior)
+  const comp = L.filter(x => x.a.t > 0 && x.b.t > 0 && isFinite(x.d)), aud = L.filter(x => x.a.t > 0);
+  if (!aud.length) return `Sem auditoria na janela ${esc(J.txt)}.`;
+  if (J.temAnt && comp.length) {
+    const c = {up: 0, flat: 0, down: 0}; comp.forEach(x => { c[x.d >= 0.01 ? 'up' : x.d <= -0.01 ? 'down' : 'flat']++; });
+    const p = [c.up ? `${c.up} ${c.up > 1 ? 'sobem' : 'sobe'}` : '', c.flat ? `${c.flat} ${c.flat > 1 ? 'ficam estáveis' : 'fica estável'}` : '', c.down ? `${c.down} ${c.down > 1 ? 'caem' : 'cai'}` : ''].filter(Boolean);
+    const termo = p.length > 1 ? p.slice(0, -1).join(', ') + ' e ' + p[p.length - 1] : p[0];
+    const pior = comp.reduce((a, b) => (b.d < a.d ? b : a)), melhor = comp.reduce((a, b) => (b.d > a.d ? b : a));
+    if (comp.length === 1) return `${nomeFn(pior.k)} ${pior.d >= 0.01 ? 'sobe' : pior.d <= -0.01 ? 'cai' : 'fica estável'} (${ppTxt(pior.d)}, ${p1(pior.m)}).`;
+    return `${termo}; ` + (pior.d <= -0.005 ? `${nomeFn(pior.k)} é a maior queda (${ppTxt(pior.d)}, ${p1(pior.m)}).` : `${nomeFn(melhor.k)} é a maior alta (${ppTxt(melhor.d)}, ${p1(melhor.m)}).`);
+  }
+  const mx = aud.reduce((a, b) => (b.m > a.m ? b : a)), mn = aud.reduce((a, b) => (b.m < a.m ? b : a));
+  return aud.length === 1 ? `${nomeFn(mx.k)} com ${p1(mx.m)}.` : `${n0(aud.length)} ${plural} auditadas; ${nomeFn(mx.k)} tem o maior MSL (${p1(mx.m)}) e ${nomeFn(mn.k)} o menor (${p1(mn.m)}).`;
+}
+const exTermo = ds => { const c = {up: 0, flat: 0, down: 0}; ds.forEach(d => { if (isFinite(d)) c[d >= 0.01 ? 'up' : d <= -0.01 ? 'down' : 'flat']++; });
+  return `<div class="termo"><span class="vbig up">▲ ${c.up} sobem</span><span class="vbig flat">● ${c.flat} estáveis</span><span class="vbig down">▼ ${c.down} caem</span></div>`; };
+function exTabela(t, linhas, colunas, opc = {}) {   // colunas: {c: cabeçalho, v: valor para ordenar, h: célula, t: total (true = mesma célula), l: à esquerda, b: negrito, k: classe, oc: fica fora do slide}
+  if (S.ui['sort' + t] || opc.padrao !== undefined) ordena(linhas, t, colunas.map(c => c.v || (() => 0)), opc.padrao);
+  const cl = c => [c.l ? 'l' : '', c.b ? 'b' : '', c.k || '', c.oc ? 'ex-oc' : ''].filter(Boolean).join(' '), ch = c => [c.l ? 'l' : '', c.oc ? 'ex-oc' : ''].filter(Boolean).join(' ');
+  const th = colunas.map((c, i) => (c.v ? thSort(t, i, c.c, ch(c)) : `<th class="${ch(c)}">${c.c}</th>`)).join('');
+  const tr = x => `<tr class="${opc.on && opc.on(x) ? 'on' : ''}">${colunas.map(c => `<td class="${cl(c)}">${c.h(x)}</td>`).join('')}</tr>`;
+  const tot = opc.tot ? `<tr class="tot">${colunas.map(c => `<td class="${ch(c)}">${c.t === true ? c.h(opc.tot) : c.t ? c.t(opc.tot) : ''}</td>`).join('')}</tr>` : '';
+  return `<div class="tw"><table><thead><tr>${th}</tr></thead><tbody>${linhas.map(tr).join('') || `<tr><td colspan="${colunas.length}" class="empty">Nada neste recorte.</td></tr>`}${linhas.length ? tot : ''}</tbody></table></div>`;
+}
+function exTabJanela(t, rot, L, nomeFn, J, opc = {}) {   // janela x mesma janela do ano anterior; opc: sel (abre o item), spark (Map mês a mês), lojas (Map do exLojasPor), extra, extraCedo (logo depois do Δ pp), curvaCedo, compacto, semContagem
+  const tot = exTotal(L), lj = opc.lojas || null, sel = opc.sel ? String(S.ui[opc.sel] ?? '') : null;
+  if (lj) { L.forEach(x => { x.lj = lj.get(x.k) || ZL(); }); tot.lj = ZL(); L.forEach(x => Object.keys(tot.lj).forEach(c => { tot.lj[c] += x.lj[c]; })); }
+  const sem = s => semAcento(String(s).replace(/<[^>]+>/g, ''));
+  // ordem: o MSL primeiro (no celular é o que aparece sem rolar a tabela), depois faltas, lojas, a curva e as contagens
+  const cols = [{c: rot, v: x => sem(nomeFn(x.k)), l: true, b: true, t: () => 'Total',
+    h: x => (opc.sel ? `<button class="lnk" data-act="ui" data-k="${opc.sel}" data-v="${String(x.k) === sel ? '' : x.k}">${nomeFn(x.k)}</button>` : nomeFn(x.k))},
+    {c: `MSL ${J.a5}`, v: x => x.mb, h: x => p1(x.mb), t: true}, {c: `MSL ${J.a6}`, v: x => x.m, h: x => p1(x.m), b: true, t: true}, {c: 'Δ pp', v: x => x.d, h: x => vppt(x.d), t: true}];
+  const curva = {c: `Curva ${J.a5} · ${J.a6}`, h: x => exSpark(opc.spark.get(x.k), J), oc: true};
+  if (opc.spark && opc.curvaCedo) cols.push(curva);   // a curva que a página anuncia fica na área visível em 1280 px
+  cols.push(...(opc.extraCedo || []), {c: `Faltas ${J.a6}`, v: x => x.f, h: x => n0(x.f), t: true}, {c: 'Peso nas faltas', v: x => x.peso, h: x => p1(x.peso), t: true});
+  if (!opc.compacto) cols.push({c: 'Impacto no MSL', v: x => x.imp, h: x => vppt(x.imp)});
+  if (lj) {
+    const pa = o => (o.n ? o.acima / o.n : NaN), pb = o => (o.nb ? o.acimab / o.nb : NaN);
+    cols.push({c: 'Lojas', v: x => x.lj.n, h: x => n0(x.lj.n), t: x => n0(x.lj.n)}, {c: 'Acima de 65%', v: x => x.lj.acima, h: x => n0(x.lj.acima), t: x => n0(x.lj.acima)},
+      {c: `% acima ${J.a6}`, v: x => pa(x.lj), h: x => p1(pa(x.lj)), t: x => p1(pa(x.lj))}, {c: `% acima ${J.a5}`, v: x => pb(x.lj), h: x => p1(pb(x.lj)), t: x => p1(pb(x.lj))},
+      {c: 'Auditorias', v: x => x.lj.aud, h: x => n0(x.lj.aud), t: x => n0(x.lj.aud)});
+  }
+  if (opc.spark && !opc.curvaCedo) cols.push(curva);
+  if (!opc.compacto && !opc.semContagem) cols.push({c: `Target ${J.a5}`, v: x => x.b.t, h: x => (x.b.t ? n0(x.b.t) : ''), t: true, oc: true}, {c: `Compl. ${J.a5}`, v: x => x.b.c, h: x => (x.b.t ? n0(x.b.c) : ''), t: true, oc: true},
+    {c: `Target ${J.a6}`, v: x => x.a.t, h: x => (x.a.t ? n0(x.a.t) : ''), t: true, oc: true}, {c: `Compl. ${J.a6}`, v: x => x.a.c, h: x => (x.a.t ? n0(x.a.c) : ''), t: true, oc: true});
+  cols.push(...(opc.extra || []));
+  return exTabela(t, L, cols, {tot, padrao: opc.padrao, on: opc.sel ? x => String(x.k) === sel : null});
+}
+function exTabMeses(rot, keys, nomeFn, Mp, J, med = 'msl') {   // matriz item x mês: ano anterior e ano do mês vigente, até o mês vigente
+  const Y = J.Y, idx = [];
+  for (const y of [Y - 1, Y]) for (let m = 1; m <= 12; m++) { const i = D.meses.indexOf(`${y}${String(m).padStart(2, '0')}`); if (i >= 0 && i <= J.v) idx.push(i); }
+  const cel = (t_, c_) => (!(t_ > 0) ? '' : med === 'falta' ? n0(t_ - c_) : med === 'target' ? n0(t_) : p1(c_ / t_));
+  const ks = keys.filter(k => Mp.has(k)), tt = new Float64Array(D.M), tc = new Float64Array(D.M);
+  ks.forEach(k => { const o = Mp.get(k); idx.forEach(i => { tt[i] += o.t[i]; tc[i] += o.c[i]; }); });
+  const jn = new Set(J.idx), linha = (nome, a, b, c) => `<tr class="${c || ''}"><td class="l b">${nome}</td>${idx.map(i => `<td class="${jn.has(i) ? 'b' : ''}">${cel(a[i], b[i])}</td>`).join('')}</tr>`;
+  if (!ks.length) return '<div class="empty">Nada neste recorte.</div>';
+  return `<div class="tw fim"><table><thead><tr><th class="l">${rot}</th>${idx.map(i => `<th>${exRot(i)}</th>`).join('')}</tr></thead><tbody>` +
+    ks.map(k => linha(nomeFn(k), Mp.get(k).t, Mp.get(k).c)).join('') + linha('Total', tt, tc, 'tot') + '</tbody></table></div>';
+}
+const exSegMM = () => { const med = S.ui.exmm || 'msl'; return `<div class="seg">${[['msl', 'MSL %'], ['falta', 'Faltas'], ['target', 'Target']].map(([k, n]) => `<button data-act="ui" data-k="exmm" data-v="${k}" class="${k === med ? 'on' : ''}">${n}</button>`).join('')}</div>`; };
+const exNotaMM = () => `<p class="note" style="margin:10px 0 0">Mês a mês só para tendência; em negrito, os meses da janela. ${S.ui.exmm === 'falta' ? 'Faltas = Target menos Compliance.' : S.ui.exmm === 'target' ? 'Target = SKUs do MSL auditados na loja (contagem).' : 'MSL = Compliance sobre Target do mês.'}</p>`;
+function exTabLojas(t, J, sub, opc = {}) {   // loja a loja: MSL da janela contra a própria loja no ano anterior
+  const A = exSoma(J.idx, EXC.loja, sub), B = J.temAnt ? exSoma(J.ant, EXC.loja, sub) : new Map(), AU = exAudPor(J.idx, sub), Mm = exMeses(EXC.loja, sub);
+  let L = [...new Set([...A.keys(), ...B.keys()])].map(k => { const a = A.get(k) || EZ, b = B.get(k) || EZ, m = msl(a), mb = msl(b);
+    return {k, a, b, m, mb, d: m - mb, f: a.t > 0 ? a.t - a.c : NaN, aud: a.t > 0 ? AU.get(k) || 0 : NaN}; }).filter(x => x.a.t > 0 || x.b.t > 0);
+  const q = semAcento(String(opc.busca || '').trim());
+  if (q) L = L.filter(x => { const l = D.lojas[x.k]; return semAcento([l.nome, l.id, l.cidade, l.bandeira, l.uf, l.executivo].join(' ')).includes(q); });
+  const lj = x => D.lojas[x.k], sel = String(S.ui.selloja ?? ''), aqui = (opc.link || 'ui') === 'ui';
+  const tot = exTotal(L); tot.aud = L.reduce((s, x) => s + (isFinite(x.aud) ? x.aud : 0), 0);
+  const cols = [
+    {c: 'Loja', v: x => semAcento(lj(x).nome), l: true, b: true, k: 'nm', t: () => `Total · ${n0(L.filter(x => x.a.t > 0).length)} lojas auditadas`,
+      h: x => (aqui ? `<button class="lnk" data-act="ui" data-k="selloja" data-v="${String(x.k) === sel ? '' : x.k}">${exLojaNome(x.k)}</button>`
+        : `<button class="lnk" data-act="exir" data-pg="ex-lojas" data-k="selloja" data-v="${x.k}">${exLojaNome(x.k)}</button>`)},
+    {c: `MSL ${J.a6}`, v: x => x.m, h: x => pEx(x.m), b: true, t: true}, {c: `MSL ${J.a5}`, v: x => x.mb, h: x => pEx(x.mb), t: true}, {c: 'Δ pp', v: x => x.d, h: x => vppt(x.d), t: true},
+    {c: 'Faixa', v: x => x.m, l: true, h: x => exFaixa(x.m)}, {c: 'Auditorias', v: x => x.aud, h: x => n0(x.aud), t: true}, {c: `Faltas ${J.a6}`, v: x => x.f, h: x => n0(x.f), t: true},
+    ...(opc.semRede ? [] : [{c: 'Cliente', v: x => lj(x).bandeira, l: true, h: x => esc(lj(x).bandeira)}]),
+    ...(opc.semExec ? [] : [{c: 'Executivo', v: x => lj(x).executivo, l: true, h: x => esc(lj(x).executivo)}]),
+    {c: 'UF', v: x => lj(x).uf, l: true, h: x => esc(lj(x).uf)}, {c: 'Cidade', v: x => lj(x).cidade, l: true, h: x => esc(lj(x).cidade), oc: true},
+    {c: 'Ambiente', v: x => lj(x).ambiente, l: true, h: x => esc(lj(x).ambiente), oc: true},
+    {c: `Curva ${J.a5} · ${J.a6}`, h: x => exSpark(Mm.get(x.k), J), oc: true}, {c: 'Código', v: x => lj(x).id, l: true, k: 'ex-cod', h: x => esc(lj(x).id), oc: true}];
+  return exTabela(t, L, cols, {tot, padrao: '-' + cols.findIndex(c => c.c === `MSL ${J.a6}`), on: aqui ? x => String(x.k) === sel : null}) +
+    `<p class="note" style="margin:10px 0 0">${aqui ? 'Clique no nome para abrir a loja; no título da coluna, para ordenar.' : 'Clique no nome para abrir a loja na página Lojas.'} Loja sem auditoria na janela aparece no fim, com o MSL do ano anterior.</p>`;
+}
+function exRolarDet(k, v) {   // depois de abrir a página: leva até o item aberto
+  if (!String(k).startsWith('sel') || v === '' || v === undefined) return;
+  const d = document.querySelector('#app .det'); if (!d) return;
+  const off = document.querySelector('.gnav').offsetHeight + document.querySelector('.fbar').offsetHeight + 12;
+  scrollTo({top: d.getBoundingClientRect().top + scrollY - off});
+}
+const exSelValido = (k, L) => { const s = S.ui[k]; return s !== undefined && s !== '' && L.some(x => String(x.k) === String(s)) ? +s : null; };
+
+/* data da fonte (o mesmo selo "Dados de" das outras pernas) */
+const fontesEx = () => [fonte('execucao')].filter(Boolean);
+function validadeEx() {
+  const f = fonte('execucao');
+  if (!f) return {velho: false, parcial: D.parc === D.M - 1, txt: `Execução até ${exRot(D.M - 1).replace('*', '')}`};
+  const velho = fechadoFonte(f) < mesEsperado();
+  return {velho, parcial: !!f.parcial, txt: `Execução até ${f.ate_txt}${f.parcial ? ` · parcial até ${String(f.ate_dia).slice(0, 5)}` : ''}${f.extraido ? ` · PBI de ${f.extraido.slice(0, 5)}` : ''}${velho ? ` · ${faltaFonte(f).toLowerCase()}` : ''}`};
+}
+const topoEx = () => { const f = fonte('execucao'); return ['Execução Diretos', f && f.extraido ? `${f.nome} de ${f.extraido.slice(0, 5)}` : '', `site de ${DSO.gerado.slice(0, 5)}`].filter(Boolean).join(' · '); };
+function exNotaParcial() {
+  const J = exJanela();
+  return J.parc && D.parc >= 0 ? `* ${exRot(D.parc).replace('*', '')} parcial até ${D.ateDia}: a janela vigente já usa o mês parcial. O MSL é razão (Compliance sobre Target) e já vale; Target, faltas e auditorias ainda crescem até o fechamento.` : '';
+}
+function linhasRecorteEx() {
+  const J = exJanela(), f = fonte('execucao');
+  const L = [['Perna', 'Execução Diretos'], ['Página', PAGES.find(p => p[0] === S.page)[1]], ['Mês vigente', exRot(J.v) + (J.v === D.parc ? ` (parcial até ${D.ateDia})` : '')],
+    ['Janela de 3 meses', J.txt], ['Comparação', J.temAnt ? `mesma janela de ${J.Y - 1}: ${J.antTxt}` : `sem a mesma janela em ${J.Y - 1}`],
+    ['Regra', 'MSL = soma do Compliance sobre a soma do Target; loja no patamar = MSL acima de 65% na janela; falta = Target menos Compliance']];
+  if (exNotaParcial()) L.push(['Mês parcial', exNotaParcial()]);
+  FILTROS.forEach(([k, n]) => L.push([n, S.f[k].size ? [...S.f[k]].map(i => dic[k][i]).join(', ') : 'Todos']));
+  if (S.page === 'ex-lojas' && S.ui.exbusca) L.push(['Busca na tabela', S.ui.exbusca]);
+  L.push(['Site publicado em', DSO.gerado]);
+  if (f) L.push([`Fonte ${f.nome}`, `${quandoFonte(f)}${f.hora ? ' (extração às ' + f.hora + ')' : ''}${f.obs ? '. ' + f.obs : ''}`]);
+  (D.fonte.obs || []).forEach((x, i) => L.push([`Premissa ${i + 1}`, String(x)]));
+  L.push(['Exportado em', new Date().toLocaleString('pt-BR')], ['Link desta visão', location.href]);
+  return L;
+}
+
+/* ----- leitura automática: onde ganha e onde cai (nomes vêm da base cifrada) ----- */
+function exLeitura(J, R) {
+  if (!(R.a.t > 0)) return `<div class="card"><div class="empty">Sem auditoria de MSL neste recorte na janela ${esc(J.txt)}${J.temAnt && R.b.t > 0 ? `; em ${esc(J.antTxt)} o MSL era ${p1(R.mb)}` : ''}.</div></div>`;
+  const L = [], lista = a => (a.length > 1 ? a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1] : a[0] || ''), nm = k => esc(dic.marca[k]);
+  L.push(`MSL de ${p1(R.m)} na janela ${esc(J.txt)}${J.temAnt && isFinite(R.mb) ? `, ${ppTxt(R.d)} sobre ${esc(J.antTxt)} (${p1(R.mb)})` : ''}. ${n0(R.acima)} de ${n0(R.n)} lojas auditadas ficam acima de 65% (${p1(R.pa)}).`);
+  const MK = exLinhas(J, EXC.marca), MKc = MK.filter(x => x.a.t >= 50 && x.b.t >= 50 && isFinite(x.d));
+  const fora = MK.filter(x => !(x.a.t > 0) && x.b.t > 0).sort((a, b) => b.b.t - a.b.t);
+  if (J.temAnt && fora.length && R.b.t > 0) {   // a cesta de marcas mudou: compara só as marcas auditadas nos dois períodos
+    const bt = fora.reduce((s, x) => s + x.b.t, 0), bc = fora.reduce((s, x) => s + x.b.c, 0), mc = R.b.t - bt > 0 ? (R.b.c - bc) / (R.b.t - bt) : NaN;
+    L.push(`${n0(fora.length)} ${fora.length > 1 ? 'marcas auditadas' : 'marca auditada'} em ${esc(J.antTxt)} ${fora.length > 1 ? 'ficaram' : 'ficou'} sem auditoria na janela vigente (${lista(fora.slice(0, 3).map(x => nm(x.k)).concat(fora.length > 3 ? ['outras'] : []))}): ${p1(bt / R.b.t)} do Target do ano anterior. Na mesma cesta de marcas, o MSL vai de ${p1(mc)} para ${p1(R.m)} (${ppTxt(R.m - mc)}).`);
+  }
+  const sobe = MKc.filter(x => x.d >= 0.005).sort((a, b) => b.d - a.d).slice(0, 3), cai = MKc.filter(x => x.d <= -0.005).sort((a, b) => a.d - b.d).slice(0, 3);
+  if (sobe.length) L.push(`Ganha em ${lista(sobe.map(x => `${nm(x.k)} (${ppTxt(x.d)}, ${p1(x.m)})`))}.`);
+  if (cai.length) L.push(`Cai em ${lista(cai.map(x => `${nm(x.k)} (${ppTxt(x.d)}, ${p1(x.m)})`))}.`);
+  const baixo = MK.filter(x => x.imp <= -0.003).sort((a, b) => a.imp - b.imp).slice(0, 4);
+  if (baixo.length) L.push(`O que mais tira do MSL total: ${lista(baixo.map(x => `${nm(x.k)} (${p1(x.m)}, tira ${nf1.format(-x.imp * 100)} pp)`))}.`);
+  const CL = exLinhas(J, EXC.bandeira).filter(x => x.a.t >= 100 && x.b.t >= 100 && isFinite(x.d)).sort((a, b) => b.d - a.d);
+  if (CL.length > 1) {
+    const g = CL[0], p = CL[CL.length - 1], nc = k => esc(dic.bandeira[k]), partes = [];
+    if (g.d >= 0.005) partes.push(`${nc(g.k)} é quem mais ganha (${ppTxt(g.d)}, ${p1(g.m)})`);
+    if (p.d <= -0.005) partes.push(`${nc(p.k)} quem mais cai (${ppTxt(p.d)}, ${p1(p.m)})`);
+    if (partes.length) L.push(`Entre os clientes, ${partes.join(' e ')}.`);
+  }
+  const LO = exLinhas(J, EXC.loja).filter(x => x.a.t > 0), abaixo = LO.filter(x => x.m < 0.5).sort((a, b) => a.m - b.m);
+  if (abaixo.length) L.push(`${n0(abaixo.length)} ${abaixo.length > 1 ? 'lojas ficam' : 'loja fica'} abaixo de 50%; a menor é ${exLojaNome(abaixo[0].k)} (${esc(D.lojas[abaixo[0].k].bandeira)}, ${p1(abaixo[0].m)}).`);
+  const SK = exLinhas(J, EXC.sku).filter(x => x.f > 0).sort((a, b) => b.f - a.f)[0];
+  if (SK) { const lf = exLojasSku(J).get(SK.k) || {falta: 0};
+    L.push(`A maior falta é ${exSkuNome(SK.k)} (${esc(D.skus[SK.k].marca)}): ${n0(SK.f)} faltas em ${n0(lf.falta)} ${lf.falta === 1 ? 'loja' : 'lojas'}, ${p1(SK.peso)} das faltas da janela.`); }
+  if (J.temAnt && R.nb > 0 && R.n < R.nb * 0.9) L.push(`Cobertura menor: ${n0(R.n)} lojas auditadas contra ${n0(R.nb)} em ${esc(J.antTxt)}. Leia o % de lojas acima de 65% junto com o número de lojas.`);
+  return `<div class="card"><ol class="num">${L.map(x => `<li><span>${x}</span></li>`).join('')}</ol></div>`;
+}
+
+/* ----- páginas ----- */
+function pgExInicio() {
+  const J = exJanela(), R = exResumo(J);
+  const side = `<div class="side">${(DSO.equipe || []).map(([cargo, nome]) => `${esc(cargo)} <span class="lk">${esc(nome)}</span>`).join('<br>')}<br>Janela ${esc(J.txt)} · ${n0(R.n)} lojas auditadas</div>`;
+  let h = hero('', 'Execução Diretos.', 'O MSL das contas diretas, loja a loja.', side);
+  h += exKpis(R, J);
+  h += `<h2 class="sec">A leitura. <span>Onde ganha e onde cai, calculada sobre o recorte marcado.</span></h2>` + exLeitura(J, R);
+  h += `<h2 class="sec">A curva do MSL. <span>Mês a mês, só para tendência: a leitura oficial é a janela.</span></h2><div class="card"><p class="eyebrow">MSL mês a mês · ${J.temY0 ? `${J.Y - 1} e ` : ''}${J.Y}</p>${exCurva(exSerie(), J)}</div>`;
+  const MK = exOrdemMarcas(exLinhas(J, EXC.marca).filter(x => x.a.t > 0)), Mm = exMeses(EXC.marca);
+  const cartao = x => `<a class="card" href="#ex-dados" data-act="exir" data-pg="ex-dados" data-k="exab" data-v="marca"><p class="eyebrow ${mkCls(String(dic.marca[x.k]).toUpperCase())}">${esc(dic.marca[x.k])}</p>
+    <div class="kpi"><div class="val" style="font-size:30px">${p1(x.m)}</div><div class="sub">${[isFinite(x.d) ? vppt(x.d) + (J.temAnt ? ' sobre ' + esc(J.antTxt) : '') : '', `${n0(x.f)} faltas`].filter(Boolean).join(' · ')}</div></div>${exSpark(Mm.get(x.k), J)}</a>`;
+  const cto = MK.filter(x => exEhCTO(dic.marca[x.k])), outras = MK.filter(x => !exEhCTO(dic.marca[x.k]));
+  if (cto.length) h += `<h2 class="sec">As marcas do CTO. <span>MSL da janela e a variação contra o ano anterior.</span></h2><div class="grid g4 ex-cto">${cto.map(cartao).join('')}</div>`;   // 4 cartões fixos, sem rolagem
+  if (outras.length) h += `<h2 class="sec">As demais marcas. <span>Entram no total, como no PBI.</span></h2><div class="shelf">${outras.map(cartao).join('')}</div>`;
+  const IDX = [['ex-dados', 'Dados gerais', 'Janela, ano e mês para conferir com o PBI, e as abas Marca, Segmento, Canal e ambiente e UF, com o mês a mês.'],
+    ['ex-diretor', 'Visão do Diretor', 'Os números da janela, os clientes e as lojas que mais puxam o MSL para baixo e as faltas que mais pesam.'],
+    ['ex-clientes', 'Clientes', 'MSL por rede e lojas acima de 65%; ao abrir, as lojas da rede e a matriz marca x mês.'],
+    ['ex-lojas', 'Lojas', 'Ranking de todas as lojas, busca por nome e a página da loja: marcas, segmentos, faltas, curva e a última visita.'],
+    ['ex-executivos', 'Executivos', 'MSL da carteira de lojas de cada executivo, a pior marca e as lojas de cada um.'],
+    ['ex-skus', 'SKUs e faltas', 'SKUs que mais faltam, marca a marca, e as lojas onde cada SKU falta.']];
+  h += `<h2 class="sec">O índice. <span>A mesma lógica das pernas Sell Out e Sell In.</span></h2><div class="grid g3">` +
+    IDX.map(([pg, n, d], i) => `<a class="card idx" href="#${pg}" data-act="pg" data-pg="${pg}" style="color:inherit;text-decoration:none"><p class="eyebrow">${String(i + 1).padStart(2, '0')}</p><h4>${n}</h4><p>${d}</p><div class="go"><span style="color:var(--link)">Abrir ›</span></div></a>`).join('') + '</div>';
+  h += `<h2 class="sec">Como ler. <span>Regras da perna Execução Diretos.</span></h2><div class="card"><ol class="num">
+    <li>MSL = soma do Compliance dividida pela soma do Target, nunca média de %. A leitura oficial é a janela de 3 meses: o mês vigente e os 2 anteriores (out = ago, set e out), contra a mesma janela do ano anterior.</li>
+    <li>O seletor Mês vigente, no canto da barra, muda a janela do site inteiro. A curva mês a mês serve só para tendência.</li>
+    <li>Patamar oficial do PBI: loja com MSL acima de 65% na janela. Leia o % de lojas acima do patamar junto com o número de lojas auditadas.</li>
+    <li>Falta = Target menos Compliance: SKU do MSL que a auditoria não encontrou na loja. Impacto no MSL = pontos que o item tira ou soma no MSL total (o MSL dele contra o total, pesado pelo Target).</li>
+    <li>Todas as marcas do relatório entram no total, como no PBI. As 4 marcas do CTO (Veja, Vanish, Harpic e Finish) aparecem primeiro, com a etiqueta CTO.</li>
+    <li>Cliente, Executivo, UF, Canal e Ambiente filtram lojas; Marca e Segmento filtram SKUs. O link da página guarda o recorte e o mês vigente.</li></ol></div>`;
+  if ((D.fonte.obs || []).length) h += `<h2 class="sec">Como ler a base. <span>Premissas da extração do PBI.</span></h2><div class="card"><ol class="num">${D.fonte.obs.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
+  return h;
+}
+
+function exTabPeriodos(J) {   // os totais que o PBI mostra, para conferir (MSL com 2 casas)
+  const Y1 = D.meses.map((_, i) => i).filter(i => +D.meses[i].slice(0, 4) === J.Y - 1 && D.tem[i]);
+  const P = [[`Janela vigente · ${J.txt}`, J.idx], ...(J.temAnt ? [[`Mesma janela · ${J.antTxt}`, J.ant]] : []), [`Acumulado ${J.Y} · ${J.anoTxt}`, J.ano],
+    ...(J.temAnoAnt ? [[`Mesmo período ${J.Y - 1} · ${J.anoAntTxt}`, J.anoAnt]] : []), ...(Y1.length ? [[`Ano ${J.Y - 1} inteiro`, Y1]] : []), [`Mês vigente · ${exRot(J.v)}`, [J.v]]];
+  const linhas = P.map(([n, idx]) => { const o = exUm(idx), A = exSoma(idx, EXC.loja); let lj = 0, ac = 0; A.forEach(x => { if (x.t > 0) { lj++; if (x.c / x.t > EX_PAT) ac++; } }); return {n, o, lj, ac}; });
+  return `<div class="tw"><table><thead><tr><th class="l">Período</th><th>Target</th><th>Compliance</th><th>MSL</th><th>Faltas</th><th>Lojas auditadas</th><th>Acima de 65%</th><th>% acima</th></tr></thead><tbody>` +
+    linhas.map(x => `<tr><td class="l b">${esc(x.n)}</td><td>${n0(x.o.t)}</td><td>${n0(x.o.c)}</td><td class="b">${n2p(msl(x.o))}</td><td>${n0(x.o.t - x.o.c)}</td><td>${n0(x.lj)}</td><td>${n0(x.ac)}</td><td>${p1(x.lj ? x.ac / x.lj : NaN)}</td></tr>`).join('') +
+    `</tbody></table></div><p class="note" style="margin:10px 0 0">Target e Compliance são contagens de SKU auditado na loja. Lojas e % acima de 65% são de cada período inteiro.</p>`;
+}
+function pgExDados() {
+  const J = exJanela(), R = exResumo(J), ab = S.ui.extodas ? 'todas' : (S.ui.exab || 'marca'), med = S.ui.exmm || 'msl', ver = k => ab === 'todas' || ab === k;
+  let h = hero('Dados gerais', 'MSL por marca, segmento, canal e UF.', `Janela ${esc(J.txt)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}.`) + exKpis(R, J);
+  h += `<h2 class="sec">Janela, ano e mês. <span>Os mesmos totais do PBI, para conferência.</span></h2><div class="card"><p class="eyebrow">Totais por período</p>${exTabPeriodos(J)}</div>`;
+  h += `<div class="pills" style="margin:28px 0 0">${[['marca', 'Marca'], ['segmento', 'Segmento'], ['canal', 'Canal e ambiente'], ['uf', 'UF']].map(([k, n]) => `<button data-act="ui" data-k="exab" data-v="${k}" class="${k === ab ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+  const sub = `Janela ${esc(J.txt)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}`;
+  if (ver('marca')) {
+    const L = exOrdemMarcas(exLinhas(J, EXC.marca)), Mm = exMeses(EXC.marca);
+    h += `<h2 class="sec">Marca a marca. <span>${sub}; as 4 marcas do CTO primeiro.</span></h2><div class="card"><p class="eyebrow">Marca · janela</p>${exTabJanela('dxm', 'Marca', L, exMarcaNome, J, {spark: Mm})}</div>` +
+      `<div class="card"><p class="eyebrow">Marca · mês a mês</p>${exSegMM()}${exTabMeses('Marca', L.map(x => x.k), exMarcaNome, Mm, J, med)}${exNotaMM()}</div>` +
+      (L.some(x => !(x.a.t > 0)) ? `<p class="note">Marca sem MSL ${J.a6} = sem auditoria na janela vigente, só no ano anterior: ela pesa no total de ${J.a5} e não no de ${J.a6}.</p>` : '');
+  }
+  if (ver('segmento')) {
+    const ordM = new Map(exOrdemMarcas(exLinhas(J, EXC.marca)).map((x, i) => [x.k, i]));
+    const L = exLinhas(J, EXC.segmento).sort((a, b) => (ordM.get(D.segMarca[a.k]) ?? 99) - (ordM.get(D.segMarca[b.k]) ?? 99) || b.a.t - a.a.t || b.b.t - a.b.t), Mm = exMeses(EXC.segmento);
+    h += `<h2 class="sec">Segmento a segmento. <span>${sub}; segmentos da marca no PBI.</span></h2><div class="card"><p class="eyebrow">Segmento · janela</p>${exTabJanela('dxs', 'Marca · segmento', L, exSegNome, J, {spark: Mm})}</div>` +
+      `<div class="card"><p class="eyebrow">Segmento · mês a mês</p>${exSegMM()}${exTabMeses('Marca · segmento', L.map(x => x.k), exSegNome, Mm, J, med)}${exNotaMM()}</div>`;
+  }
+  if (ver('canal')) {
+    const L = exLinhas(J, EXC.canal).sort((a, b) => b.a.t - a.a.t), chA = r => D.L.canal[r[1]] * 100 + D.L.ambiente[r[1]];
+    const LA = exLinhas(J, chA).sort((a, b) => Math.floor(a.k / 100) - Math.floor(b.k / 100) || b.a.t - a.a.t);
+    const nA = k => `${esc(dic.canal[Math.floor(k / 100)])} · ${esc(dic.ambiente[k % 100])}`;
+    h += `<h2 class="sec">Canal e ambiente. <span>${sub}; canal e ambiente da loja no PBI.</span></h2><div class="card"><p class="eyebrow">Canal · janela</p>${exTabJanela('dxc', 'Canal', L, k => esc(dic.canal[k]), J, {lojas: exLojasPor(J, l => D.L.canal[l]), spark: exMeses(EXC.canal)})}</div>` +
+      `<div class="card"><p class="eyebrow">Canal e ambiente · janela</p>${exTabJanela('dxa', 'Canal · ambiente', LA, nA, J, {lojas: exLojasPor(J, l => D.L.canal[l] * 100 + D.L.ambiente[l]), spark: exMeses(chA)})}</div>` +
+      `<div class="card"><p class="eyebrow">Canal e ambiente · mês a mês</p>${exSegMM()}${exTabMeses('Canal · ambiente', LA.map(x => x.k), nA, exMeses(chA), J, med)}${exNotaMM()}</div>`;
+  }
+  if (ver('uf')) {
+    const L = exLinhas(J, EXC.uf).sort((a, b) => b.a.t - a.a.t), Mm = exMeses(EXC.uf);
+    h += `<h2 class="sec">UF contra UF. <span>${sub}; UF da loja.</span></h2><div class="card"><p class="eyebrow">UF · janela</p>${exTabJanela('dxu', 'UF', L, k => esc(dic.uf[k]), J, {lojas: exLojasPor(J, l => D.L.uf[l]), spark: Mm})}</div>` +
+      `<div class="card"><p class="eyebrow">UF · mês a mês</p>${exSegMM()}${exTabMeses('UF', L.map(x => x.k), k => esc(dic.uf[k]), Mm, J, med)}${exNotaMM()}</div>`;
+  }
+  return h + `<p class="note">Impacto no MSL = pontos que o item tira ou soma no MSL total: o MSL dele contra o total, pesado pelo Target. Peso nas faltas = parte do item nas faltas da janela.</p>`;
+}
+
+function pgExDiretor() {
+  const J = exJanela(), R = exResumo(J);
+  let h = hero('Visão do Diretor', 'A execução em uma página.', `Janela ${esc(J.txt)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}.`);
+  h += exKpis(R, J, [0, 1, 2, 4]);
+  const LJ = exLojasPor(J, l => D.L.bandeira[l]);
+  const CL = exLinhas(J, EXC.bandeira).filter(x => x.a.t > 0).sort((a, b) => a.imp - b.imp).slice(0, 3);
+  const LO = exLinhas(J, EXC.loja).filter(x => x.a.t > 0).sort((a, b) => a.imp - b.imp).slice(0, 5);
+  const pa = k => { const o = LJ.get(k); return o && o.n ? o.acima / o.n : NaN; };
+  h += `<h2 class="sec">Quem puxa para baixo. <span>Impacto = pontos que o item tira do MSL total: o MSL dele contra o total, pesado pelo Target.</span></h2>
+    <div class="card"><p class="eyebrow">Os 3 clientes</p>${exTabela('dic', CL, [{c: 'Cliente', l: true, b: true, h: x => esc(dic.bandeira[x.k])}, {c: `MSL ${J.a6}`, b: true, h: x => p1(x.m)}, {c: 'Δ pp', h: x => vppt(x.d)},
+      {c: 'Lojas', h: x => n0((LJ.get(x.k) || {}).n)}, {c: '% acima de 65%', h: x => p1(pa(x.k))}, {c: 'Impacto', h: x => vppt(x.imp)}])}</div>
+    <div class="card"><p class="eyebrow">As 5 lojas</p>${exTabela('dil', LO, [{c: 'Loja', l: true, b: true, k: 'nm', h: x => `<button class="lnk" data-act="exir" data-pg="ex-lojas" data-k="selloja" data-v="${x.k}">${exLojaNome(x.k)}</button>`},
+      {c: 'Cliente', l: true, h: x => esc(D.lojas[x.k].bandeira)}, {c: `MSL ${J.a6}`, b: true, h: x => pEx(x.m)}, {c: 'Δ pp', h: x => vppt(x.d)}, {c: 'Faltas', h: x => n0(x.f)}, {c: 'Impacto', h: x => vppt(x.imp)}])}</div>`;
+  const LF = exLojasSku(J), SK = exLinhas(J, EXC.sku).filter(x => x.f > 0).sort((a, b) => b.f - a.f).slice(0, 5);
+  h += `<h2 class="sec">As faltas que mais pesam. <span>Os 5 SKUs com mais faltas na janela ${esc(J.txt)}.</span></h2><div class="card"><p class="eyebrow">SKUs com mais faltas</p>${exTabela('dis', SK, [
+    {c: 'SKU', l: true, b: true, k: 'sk', h: x => `<button class="lnk" data-act="exir" data-pg="ex-skus" data-k="selsku" data-v="${x.k}">${exSkuNome(x.k)}</button>`}, {c: 'Marca', l: true, h: x => exMarcaNome(D.K.marca[x.k])},
+    {c: 'Segmento', l: true, h: x => esc(dic.segmento[D.K.segmento[x.k]])}, {c: 'Faltas', b: true, h: x => n0(x.f)}, {c: 'Peso nas faltas', h: x => p1(x.peso)},
+    {c: 'Lojas onde falta', h: x => n0((LF.get(x.k) || {}).falta)}, {c: 'Lojas auditadas', h: x => n0((LF.get(x.k) || {}).aud)}, {c: 'Presença', h: x => p1(x.m)}])}</div>`;
+  // cliente x marca (as 4 do CTO e o total)
+  const CM = EX_CTO.map(n => dic.marca.findIndex(m => String(m).toUpperCase() === n)).filter(i => i >= 0);
+  const ch = r => D.L.bandeira[r[1]] * 1000 + D.K.marca[r[2]], A = exSoma(J.idx, ch), B = J.temAnt ? exSoma(J.ant, ch) : new Map();
+  const AT = exSoma(J.idx, EXC.bandeira), BT = J.temAnt ? exSoma(J.ant, EXC.bandeira) : new Map(), AM = exSoma(J.idx, EXC.marca), BM = J.temAnt ? exSoma(J.ant, EXC.marca) : new Map();
+  const reds = [...new Set([...AT.keys(), ...BT.keys()])].sort((a, b) => (msl(AT.get(b)) || -1) - (msl(AT.get(a)) || -1));
+  const tri = (a, b) => `<td>${p1(msl(b))}</td><td class="b">${p1(msl(a))}</td><td>${vppt(msl(a) - msl(b))}</td>`, duo = (a, b) => `<td class="b">${p1(msl(a))}</td><td>${vppt(msl(a) - msl(b))}</td>`;
+  const totA = exUm(J.idx), totB = J.temAnt ? exUm(J.ant) : EZ;
+  // na tela: o Total completo logo depois do cliente e, por marca, o MSL da janela e o Δ pp (cabe em 1280 px); o Excel leva a matriz completa, com o ano anterior de cada marca
+  const tela = `<div class="tw" data-xls="fora"><table><thead><tr><th class="l">Cliente</th><th colspan="3" style="text-align:center">Total</th>` +
+    CM.map(m => `<th colspan="2" style="text-align:center">${esc(dic.marca[m])}</th>`).join('') + `</tr><tr><th></th><th>${J.a5}</th><th>${J.a6}</th><th>Δ pp</th>${CM.map(() => `<th>${J.a6}</th><th>Δ pp</th>`).join('')}</tr></thead><tbody>` +
+    reds.map(b => `<tr><td class="l b">${esc(dic.bandeira[b])}</td>${tri(AT.get(b), BT.get(b))}${CM.map(m => duo(A.get(b * 1000 + m), B.get(b * 1000 + m))).join('')}</tr>`).join('') +
+    `<tr class="tot"><td class="l">Total</td>${tri(totA, totB)}${CM.map(m => duo(AM.get(m), BM.get(m))).join('')}</tr></tbody></table></div>`;
+  const xls = `<div class="tw xls-so"><table><thead><tr><th class="l">Cliente</th>` +
+    ['Total', ...CM.map(m => esc(dic.marca[m]))].map(n => `<th colspan="3" style="text-align:center">${n}</th>`).join('') + `</tr><tr><th></th>${[-1, ...CM].map(() => `<th>${J.a5}</th><th>${J.a6}</th><th>Δ pp</th>`).join('')}</tr></thead><tbody>` +
+    reds.map(b => `<tr><td class="l b">${esc(dic.bandeira[b])}</td>${tri(AT.get(b), BT.get(b))}${CM.map(m => tri(A.get(b * 1000 + m), B.get(b * 1000 + m))).join('')}</tr>`).join('') +
+    `<tr class="tot"><td class="l">Total</td>${tri(totA, totB)}${CM.map(m => tri(AM.get(m), BM.get(m))).join('')}</tr></tbody></table></div>`;
+  h += `<h2 class="sec">Cliente x marca. <span>MSL da janela por rede no total e nas 4 marcas do CTO, contra o ano anterior.</span></h2><div class="card"><p class="eyebrow">Cliente x marca</p>${tela}${xls}
+    <p class="note" style="margin:12px 0 0">O Total soma todas as marcas do relatório, como no PBI. Por marca, o MSL da janela e a variação em pp; o MSL de ${J.Y - 1} de cada marca sai no Excel. Célula vazia = a rede não teve auditoria da marca no período.</p></div>`;
+  return h;
+}
+
+function pgExClientes() {
+  const J = exJanela(), L = exLinhas(J, EXC.bandeira).filter(x => x.a.t > 0 || x.b.t > 0).sort((a, b) => b.a.t - a.a.t), LJ = exLojasPor(J, l => D.L.bandeira[l]), Mm = exMeses(EXC.bandeira);
+  const execs = new Map(); D.lojas.forEach((l, i) => { const b = D.L.bandeira[i]; if (!execs.has(b)) execs.set(b, new Set()); execs.get(b).add(l.executivo); });
+  const nc = k => esc(dic.bandeira[k]);
+  let h = hero('Clientes', 'MSL por rede.', exConclusao(L, nc, J, 'redes'), '', `Janela ${esc(J.txt)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}. Clique no nome da rede para abrir as lojas.`);
+  h += `<h2 class="sec">Quantas sobem e quantas caem. <span>MSL da janela contra a mesma janela do ano anterior, por rede (estável = menos de 1 pp).</span></h2>` + exTermo(L.map(x => x.d));
+  h += `<h2 class="sec">Rede a rede. <span>Clique no nome para abrir; no título da coluna, para ordenar.</span></h2><div class="card"><p class="eyebrow">Clientes · janela</p>${exTabJanela('exc', 'Cliente', L, k => esc(dic.bandeira[k]), J,
+    {sel: 'selcli', spark: Mm, curvaCedo: true, lojas: LJ, semContagem: true, extra: [{c: 'Executivo', l: true, v: x => [...(execs.get(x.k) || [])].join(', '), h: x => esc([...(execs.get(x.k) || [])].join(', '))}]})}</div>`;
+  const k = exSelValido('selcli', L);
+  if (k !== null) {
+    const sub = r => D.L.bandeira[r[1]] === k, nome = esc(dic.bandeira[k]), med = S.ui.exmm || 'msl';
+    const LM = exOrdemMarcas(exLinhas(J, EXC.marca, sub));
+    h += `<div class="det"><h2 class="sec">${nome}. <span>Janela ${esc(J.txt)}: os números, as lojas da rede e a matriz marca x mês.</span></h2>` + exKpis(exResumo(J, sub), J) +
+      `<div class="card"><p class="eyebrow">${nome} · MSL mês a mês</p>${exCurva(exSerie(sub), J)}</div>` +
+      `<div class="card"><p class="eyebrow">${nome} · lojas</p>${exTabLojas('excl', J, sub, {link: 'exir', semRede: true})}</div>` +
+      `<div class="card"><p class="eyebrow">${nome} · marca a marca</p>${exTabJanela('excm', 'Marca', LM, exMarcaNome, J)}</div>` +
+      `<div class="card"><p class="eyebrow">${nome} · marca x mês</p>${exSegMM()}${exTabMeses('Marca', LM.map(x => x.k), exMarcaNome, exMeses(EXC.marca, sub), J, med)}${exNotaMM()}</div></div>`;
+  }
+  return h;
+}
+
+function exVisita(k, v) {   // última visita registrada da loja (página Performance de Lojas por KPI): média do mês
+  if (!D.vis) return null;
+  const C = D.vis.campos, iM = C.indexOf('iMes'), iL = C.indexOf('iLoja');
+  let best = null;   // a visita mais recente até o mês vigente
+  D.vis.f.forEach(r => { if (r[iL] === k && r[iM] <= v && (!best || r[iM] > best[iM])) best = r; });
+  return best ? {r: best, C, m: best[iM]} : null;
+}
+const EX_SOS = {SOS_DESIN: 'Desinfetante', SOS_FIN: 'Finish', SOS_HAR: 'Harpic', SOS_COND: 'COND', SOS_SUST_KI: 'Sustagen Kids', SOS_VAN: 'Vanish', SOS_BAN: 'Banheiro', SOS_COZ: 'Cozinha', SOS_VIDROS: 'Vidros', SOS_VLP: 'VLP', SOS_VMU: 'VMU', SOS_VPS: 'VPS'};
+function exDetLoja(k, J) {
+  const l = D.lojas[k], sub = r => r[1] === k, R = exResumo(J, sub), nome = exLojaNome(k, true);
+  let h = `<div class="det"><h2 class="sec">${nome}. <span>${esc(l.bandeira)} · ${esc(l.cidade)}/${esc(l.uf)} · ${esc(l.ambiente)} · ${esc(l.executivo)} · código ${esc(l.id)}.</span></h2>` + exKpis(R, J, [0, 3, 4, 5]);
+  h += `<div class="card"><p class="eyebrow">MSL mês a mês da loja</p>${exCurva(exSerie(sub), J)}</div>`;
+  const LM = exOrdemMarcas(exLinhas(J, EXC.marca, sub)), LS = exLinhas(J, EXC.segmento, sub).sort((a, b) => a.m - b.m || b.a.t - a.a.t);
+  h += `<div class="grid g2"><div class="card"><p class="eyebrow">Marca a marca</p>${exTabJanela('exlm', 'Marca', LM, exMarcaNome, J, {compacto: true})}</div>
+    <div class="card"><p class="eyebrow">Segmento a segmento</p>${exTabJanela('exls', 'Marca · segmento', LS, exSegNome, J, {compacto: true})}</div></div>`;
+  const MS = exMeses(EXC.sku, sub), FS = exLinhas(J, EXC.sku, sub).filter(x => x.f > 0).sort((a, b) => b.f - a.f || a.m - b.m);
+  const mesesFalta = s => { const o = MS.get(s); return o ? J.idx.filter(i => o.t[i] - o.c[i] > 0).map(exRot).join(', ') : ''; };
+  h += `<div class="card"><p class="eyebrow">Faltas de SKU da loja · ${esc(J.txt)}</p>${exTabela('exlf' + k, FS, [
+    {c: 'SKU', l: true, b: true, k: 'sk', v: x => semAcento(D.skus[x.k].desc || ''), h: x => exSkuNome(x.k)},
+    {c: 'Vezes que faltou', b: true, v: x => x.f, h: x => n0(x.f)}, {c: 'Target', v: x => x.a.t, h: x => n0(x.a.t)}, {c: 'Presença', v: x => x.m, h: x => p1(x.m)}, {c: 'Meses com falta', l: true, h: x => esc(mesesFalta(x.k))},
+    {c: 'Marca', l: true, v: x => dic.marca[D.K.marca[x.k]], h: x => exMarcaNome(D.K.marca[x.k])}, {c: 'Segmento', l: true, v: x => dic.segmento[D.K.segmento[x.k]], h: x => esc(dic.segmento[D.K.segmento[x.k]])},
+    {c: 'Código', l: true, k: 'ex-cod', v: x => D.skus[x.k].cod, h: x => esc(D.skus[x.k].cod), oc: true}])}
+    <p class="note" style="margin:10px 0 0">Vezes que faltou = Target menos Compliance do SKU na loja, na janela (uma vez por auditoria em que o SKU não foi encontrado).</p></div>`;
+  const V = exVisita(k, J.v);
+  if (V) {
+    const val = c => V.r[V.C.indexOf(c)], sos = V.C.filter(c => c.startsWith('SOS_') && isFinite(val(c)) && val(c) !== null);
+    h += `<div class="card"><p class="eyebrow">Última visita registrada · ${esc(exRot(V.m))}</p><h3>Pontuação da loja: ${n0(val('pontuacao'))} de 100. <span>${n0(val('n_visitas'))} ${val('n_visitas') === 1 ? 'visita' : 'visitas'} no mês; média do mês. ${esc(D.vis.obs || '')}</span></h3>` +
+      (sos.length ? `<div class="tw"><table><thead><tr><th class="l">Categoria</th><th>SOS (espaço de gôndola)</th></tr></thead><tbody>${sos.map(c => `<tr><td class="l">${esc(EX_SOS[c] || c.replace('SOS_', ''))}</td><td>${nf1.format(val(c))}%</td></tr>`).join('')}</tbody></table></div>` : '<p class="note" style="margin:10px 0 0">Sem SOS registrado na visita.</p>') + '</div>';
+  }
+  return h + '</div>';
+}
+const exLojasPrincipal = () => exTabLojas('exl', exJanela(), null, {busca: S.ui.exbusca});
+function pgExLojas() {
+  const J = exJanela(), L = exLinhas(J, EXC.loja).filter(x => x.a.t > 0 || x.b.t > 0);
+  const c = {up: 0, warn: 0, down: 0, sem: 0}; L.forEach(x => { if (!(x.a.t > 0)) c.sem++; else if (x.m > EX_PAT) c.up++; else if (x.m >= 0.5) c.warn++; else c.down++; });
+  const audL = L.filter(x => x.a.t > 0), menor = audL.length ? audL.reduce((a, b) => (b.m < a.m ? b : a)) : null;
+  const conclL = menor ? `${n0(c.up)} de ${n0(audL.length)} ${audL.length > 1 ? 'lojas auditadas ficam' : 'loja auditada fica'} acima de 65%${c.down ? `, ${n0(c.down)} abaixo de 50%` : ''}; a menor é ${exLojaNome(menor.k)} (${pEx(menor.m)}).` : `Sem auditoria na janela ${esc(J.txt)}.`;
+  let h = hero('Lojas', 'MSL loja a loja.', conclL, '', `Janela ${esc(J.txt)}, do menor para o maior MSL, contra a própria loja${J.temAnt ? ` em ${esc(J.antTxt)}` : ''}.`);
+  h += `<h2 class="sec">As faixas. <span>Patamar oficial do PBI: loja com MSL acima de 65% na janela.</span></h2><div class="termo"><span class="vbig up">▲ ${c.up} acima de 65%</span><span class="vbig warn">● ${c.warn} entre 50% e 65%</span><span class="vbig down">▼ ${c.down} abaixo de 50%</span>${c.sem ? `<span class="vbig flat">${c.sem} sem auditoria na janela</span>` : ''}</div>`;
+  h += `<h2 class="sec">Loja a loja. <span>Busque pelo nome, código, cidade ou rede.</span></h2>` +
+    `<div class="card"><p class="eyebrow">Lojas · janela</p><div class="pills" style="margin:6px 0 0">${buscaRede('exbusca', S.ui.exbusca, 'Buscar loja, código, cidade ou rede')}</div><div id="ex-lojas-tab">${exLojasPrincipal()}</div></div>`;
+  const k = exSelValido('selloja', L);
+  if (k !== null) h += exDetLoja(k, J);
+  return h;
+}
+
+function pgExExecutivos() {
+  const J = exJanela(), L = exLinhas(J, EXC.executivo).filter(x => x.a.t > 0 || x.b.t > 0).sort((a, b) => b.a.t - a.a.t), LJ = exLojasPor(J, l => D.L.executivo[l]), Mm = exMeses(EXC.executivo);
+  const pior = new Map();
+  exSoma(J.idx, r => D.L.executivo[r[1]] * 1000 + D.K.marca[r[2]]).forEach((o, key) => { if (o.t < 30) return; const e = Math.floor(key / 1000), x = msl(o), p = pior.get(e); if (!p || x < p.m) pior.set(e, {m: x, mk: key % 1000}); });
+  const redes = new Map(); exSoma([...J.idx, ...J.ant], EXC.loja).forEach((o, l) => { const e = D.L.executivo[l]; if (!redes.has(e)) redes.set(e, new Set()); redes.get(e).add(D.lojas[l].bandeira); });
+  const rd = k => [...(redes.get(k) || [])].sort().join(', ');
+  let h = hero('Executivos', 'MSL por executivo.', exConclusao(L, k => esc(dic.executivo[k]), J, 'carteiras'), '', `A carteira de lojas de cada um, na janela ${esc(J.txt)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}.`);
+  h += `<h2 class="sec">Executivo a executivo. <span>Pior marca = menor MSL da carteira na janela, entre as marcas com pelo menos 30 de Target.</span></h2><div class="card"><p class="eyebrow">Executivos · janela</p>${exTabJanela('exe', 'Executivo', L, k => esc(dic.executivo[k]), J,
+    {sel: 'selexe', spark: Mm, lojas: LJ, semContagem: true, extraCedo: [{c: 'Pior marca', l: true, v: x => (pior.get(x.k) || {}).m, h: x => { const p = pior.get(x.k); return p ? `${exMarcaNome(p.mk)} <span class="mini">${p1(p.m)}</span>` : ''; }},
+      {c: 'Clientes', l: true, v: x => rd(x.k), h: x => esc(rd(x.k))}]})}</div>`;
+  const k = exSelValido('selexe', L);
+  if (k !== null) {
+    const sub = r => D.L.executivo[r[1]] === k, nome = esc(dic.executivo[k]), LM = exOrdemMarcas(exLinhas(J, EXC.marca, sub));
+    h += `<div class="det"><h2 class="sec">${nome}. <span>Janela ${esc(J.txt)}: os números, as marcas e as lojas da carteira.</span></h2>` + exKpis(exResumo(J, sub), J) +
+      `<div class="card"><p class="eyebrow">${nome} · MSL mês a mês</p>${exCurva(exSerie(sub), J)}</div>` +
+      `<div class="card"><p class="eyebrow">${nome} · marca a marca</p>${exTabJanela('exem', 'Marca', LM, exMarcaNome, J)}</div>` +
+      `<div class="card"><p class="eyebrow">${nome} · lojas</p>${exTabLojas('exel', J, sub, {link: 'exir', semExec: true})}</div></div>`;
+  }
+  return h;
+}
+
+function pgExSkus() {
+  const J = exJanela(), R = exResumo(J), LF = exLojasSku(J), SK = exLinhas(J, EXC.sku).filter(x => x.a.t > 0 || x.b.t > 0);
+  const aud = SK.filter(x => x.a.t > 0), comF = aud.filter(x => x.f > 0);
+  const lojasF = new Set(); exSoma(J.idx, EXC.loja).forEach((o, l) => { if (o.t - o.c > 0) lojasF.add(l); });
+  const card = (lab, val, sub) => `<div class="card kpi"><div class="lab">${lab}</div><div class="val">${val}</div><div class="sub dv"><span>${sub}</span></div></div>`;
+  const topF = comF.length ? comF.reduce((a, b) => (b.f > a.f ? b : a)) : null;
+  const conclS = topF ? `${n0(comF.length)} de ${n0(aud.length)} SKUs auditados tiveram falta; o que mais falta é <span class="ex-quebra">${exSkuNome(topF.k)}</span> (${n0(topF.f)} faltas em ${n0((LF.get(topF.k) || {}).falta)} ${(LF.get(topF.k) || {}).falta === 1 ? 'loja' : 'lojas'}).`
+    : aud.length ? `Nenhuma falta nos ${n0(aud.length)} SKUs auditados.` : `Sem auditoria na janela ${esc(J.txt)}.`;
+  let h = hero('SKUs e faltas', 'Onde o MSL falha.', conclS, '', `SKUs que a auditoria não encontrou na loja, na janela ${esc(J.txt)}.`);
+  h += `<div class="grid g3">${card('Faltas na janela', n0(R.f), `${p1(R.a.t ? R.f / R.a.t : NaN)} do Target de ${n0(R.a.t)}`)}${card('SKUs com falta', `${n0(comF.length)} de ${n0(aud.length)}`, 'SKUs auditados na janela')}${card('Lojas com alguma falta', `${n0(lojasF.size)} de ${n0(R.n)}`, 'lojas auditadas na janela')}</div>`;
+  // marca a marca
+  const LFm = new Map(); exSoma(J.idx, r => D.K.marca[r[2]] * 1000 + r[1]).forEach((o, key) => { const m = Math.floor(key / 1000); let x = LFm.get(m); if (!x) LFm.set(m, x = {aud: 0, falta: 0}); x.aud++; if (o.t - o.c > 0) x.falta++; });
+  const nS = new Map(), nSF = new Map(); aud.forEach(x => { const m = D.K.marca[x.k]; nS.set(m, (nS.get(m) || 0) + 1); if (x.f > 0) nSF.set(m, (nSF.get(m) || 0) + 1); });
+  const LM = exOrdemMarcas(exLinhas(J, EXC.marca));
+  h += `<h2 class="sec">Marca a marca. <span>Faltas, peso e presença (MSL) de cada marca na janela.</span></h2><div class="card"><p class="eyebrow">Faltas por marca</p>${exTabela('exsm', LM, [
+    {c: 'Marca', l: true, b: true, v: x => semAcento(dic.marca[x.k]), h: x => exMarcaNome(x.k), t: () => 'Total'}, {c: 'SKUs auditados', v: x => nS.get(x.k) || 0, h: x => n0(nS.get(x.k) || 0), t: () => n0(aud.length)},
+    {c: 'SKUs com falta', v: x => nSF.get(x.k) || 0, h: x => n0(nSF.get(x.k) || 0), t: () => n0(comF.length)}, {c: `Faltas ${J.a6}`, b: true, v: x => x.f, h: x => n0(x.f), t: true},
+    {c: 'Peso nas faltas', v: x => x.peso, h: x => p1(x.peso), t: true}, {c: `Presença ${J.a6}`, v: x => x.m, h: x => p1(x.m), t: true}, {c: `Presença ${J.a5}`, v: x => x.mb, h: x => p1(x.mb), t: true},
+    {c: 'Δ pp', v: x => x.d, h: x => vppt(x.d), t: true}, {c: 'Lojas com falta', v: x => (LFm.get(x.k) || {}).falta, h: x => n0((LFm.get(x.k) || {}).falta), t: () => n0(lojasF.size)},
+    {c: 'Lojas auditadas', v: x => (LFm.get(x.k) || {}).aud, h: x => n0((LFm.get(x.k) || {}).aud), t: () => n0(R.n)}], {tot: exTotal(LM)})}</div>`;
+  // SKU a SKU
+  const sel = String(S.ui.selsku ?? '');
+  const L = SK.filter(x => x.a.t > 0).sort((a, b) => b.f - a.f || a.m - b.m);
+  h += `<h2 class="sec">SKU a SKU. <span>Do SKU que mais falta para o que menos falta; clique no SKU para abrir as lojas.</span></h2><div class="card"><p class="eyebrow">SKUs · janela</p>${exTabela('exss', L, [
+    {c: 'SKU', l: true, b: true, k: 'sk', v: x => semAcento(D.skus[x.k].desc || ''), h: x => `<button class="lnk" data-act="ui" data-k="selsku" data-v="${String(x.k) === sel ? '' : x.k}">${exSkuNome(x.k)}</button>`, t: () => 'Total dos SKUs da janela'},
+    {c: `Faltas ${J.a6}`, b: true, v: x => x.f, h: x => n0(x.f), t: true}, {c: 'Peso nas faltas', v: x => x.peso, h: x => p1(x.peso), t: true},
+    {c: 'Lojas onde falta', v: x => (LF.get(x.k) || {}).falta, h: x => n0((LF.get(x.k) || {}).falta)}, {c: 'Lojas auditadas', v: x => (LF.get(x.k) || {}).aud, h: x => n0((LF.get(x.k) || {}).aud)},
+    {c: `Presença ${J.a6}`, v: x => x.m, h: x => p1(x.m), t: true}, {c: `Presença ${J.a5}`, v: x => x.mb, h: x => p1(x.mb), t: true}, {c: 'Δ pp', v: x => x.d, h: x => vppt(x.d), t: true},
+    {c: 'Marca', l: true, v: x => dic.marca[D.K.marca[x.k]], h: x => exMarcaNome(D.K.marca[x.k])}, {c: 'Segmento', l: true, v: x => dic.segmento[D.K.segmento[x.k]], h: x => esc(dic.segmento[D.K.segmento[x.k]])},
+    {c: 'Código', l: true, k: 'ex-cod', v: x => D.skus[x.k].cod, h: x => esc(D.skus[x.k].cod), oc: true}],
+    {tot: exTotal(L), on: x => String(x.k) === sel})}<p class="note" style="margin:10px 0 0">Presença = Compliance sobre Target do SKU (o MSL do SKU). Lojas onde falta = lojas auditadas em que o SKU faltou ao menos uma vez na janela. O total compara só os SKUs auditados na janela vigente, nos dois anos.</p></div>`;
+  const k = exSelValido('selsku', L);
+  if (k !== null) {
+    const sub = r => r[2] === k, LL = exLinhas(J, EXC.loja, sub).filter(x => x.a.t > 0).sort((a, b) => b.f - a.f || a.m - b.m);
+    h += `<div class="det"><h2 class="sec">${exSkuNome(k)}. <span>${esc(D.skus[k].marca)} · ${esc(D.skus[k].segmento)} · código ${esc(D.skus[k].cod)}: as lojas auditadas na janela, da que mais faltou para a que menos faltou.</span></h2>` +
+      `<div class="card"><p class="eyebrow">Lojas do SKU · janela</p>${exTabela('exsl', LL, [
+        {c: 'Loja', l: true, b: true, k: 'nm', h: x => `<button class="lnk" data-act="exir" data-pg="ex-lojas" data-k="selloja" data-v="${x.k}">${exLojaNome(x.k)}</button>`, t: () => 'Total'},
+        {c: 'Cliente', l: true, h: x => esc(D.lojas[x.k].bandeira)}, {c: 'UF', l: true, h: x => esc(D.lojas[x.k].uf)}, {c: 'Executivo', l: true, h: x => esc(D.lojas[x.k].executivo)},
+        {c: 'Vezes que faltou', b: true, h: x => n0(x.f), t: true}, {c: 'Target', h: x => n0(x.a.t), t: x => n0(x.a.t)}, {c: `Presença ${J.a6}`, h: x => p1(x.m), t: true}, {c: `Presença ${J.a5}`, h: x => p1(x.mb), t: true}],
+        {tot: exTotal(LL)})}</div>` + `<div class="card"><p class="eyebrow">SKU · presença mês a mês</p>${exCurva(exSerie(sub), J)}</div></div>`;
+  }
+  return h;
+}
+
 /* ---------- Exportar para Excel: as tabelas da página aberta, no recorte marcado (sem biblioteca externa) ---------- */
 const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 const crc32 = u => { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC_T[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
@@ -1664,11 +2296,12 @@ function tabelaParaLinhas(tb) {   // respeita colspan e rowspan; qualificadores 
     for (const td of tr.children) {
       pula();
       const cl = td.cloneNode(true);
+      cl.querySelectorAll('[data-xls="fora"]').forEach(d => d.remove());   // etiqueta só de tela (ex.: CTO da marca na Execução)
       cl.querySelectorAll('div.mini').forEach(d => d.replaceWith(' · ' + d.textContent.trim()));
       cl.querySelectorAll('svg').forEach(d => d.remove());
       const q = [...cl.querySelectorAll('span.mini, small')].map(d => { const x = d.textContent.trim(); d.remove(); return x; }).filter(Boolean);
       const t = cl.textContent.replace(/\s+/g, ' ').trim(), cs = +(td.getAttribute('colspan') || 1), rs = +(td.getAttribute('rowspan') || 1);
-      let val = eCab ? t.replace(/ [↑↓]$/, '') : numBR(t);
+      let val = eCab ? t.replace(/ [↑↓]$/, '') : td.classList.contains('ex-cod') ? t : numBR(t);   // código (SKU SAP, loja) fica texto: '01700' não vira 1700
       if (!eCab && q.length) {
         if (val && typeof val === 'object') { const hd = (cab[cab.length - 1] || [])[c]; ob.push((hd ? hd + ': ' : '') + q.join(', ')); }
         else val = [val, ...q].filter(Boolean).join(' · ');
@@ -1691,6 +2324,7 @@ function tabelaParaLinhas(tb) {   // respeita colspan e rowspan; qualificadores 
 const PAGINAS = {};   // preenchido junto do render
 const paginaHTML = () => (PAGINAS[S.page] || (() => comAbasMarca(pgMarca(S.page), S.page)))();
 function linhasRecorte() {
+  if (MODO === 'ex') return linhasRecorteEx();
   const L = [['Perna', T('Sell Out', 'Sell In')], ['Página', PAGES.find(p => p[0] === S.page)[1]], ['Mês de corte', ehParcial(S.corte, 2026, 'base') ? `${corteRot()}, acumulado de ${corteTxt()}` : `${mes(S.corte)}/26 (acumulado de ${PARC_PG[S.page] ? emFonte(PARC_PG[S.page], corteTxt) : corteTxt()})`]];
   if (notaParcial()) L.push(['Mês parcial', notaParcial()]);
   FILTROS.forEach(([k, n]) => L.push([n, S.f[k].size ? [...S.f[k]].map(i => dic[k][i]).join(', ') : 'Todos']));
@@ -1709,13 +2343,13 @@ async function exportarExcel(btn) {
   if (!btn || btn.disabled) return;
   const rot = btn.innerHTML; btn.disabled = true; btn.textContent = 'Gerando…';
   try {
-    const ui0 = JSON.stringify(S.ui); S.ui.sctodas = 1; S.ui.cltodas = 1;   // listas de redes completas no Excel
+    const ui0 = JSON.stringify(S.ui); S.ui.sctodas = 1; S.ui.cltodas = 1; S.ui.extodas = 1;   // listas de redes completas no Excel; na Execução, todas as abas dos Dados gerais
     const div = document.createElement('div');
     try { div.innerHTML = paginaHTML(); } finally { Object.keys(S.ui).forEach(k => delete S.ui[k]); Object.assign(S.ui, JSON.parse(ui0)); }
-    const nomePg = PAGES.find(p => p[0] === S.page)[1], busca = {'redes-scan': S.ui.scbusca, 'redes-col': S.ui.clbusca, confronto: S.ui.cbusca}[S.page];
+    const nomePg = PAGES.find(p => p[0] === S.page)[1], busca = {'redes-scan': S.ui.scbusca, 'redes-col': S.ui.clbusca, confronto: S.ui.cbusca, 'ex-lojas': S.ui.exbusca}[S.page];
     const resumo = [...FILTROS.filter(([k]) => S.f[k].size).map(([k, n]) => `${n}: ${[...S.f[k]].map(i => dic[k][i]).join(', ')}`), ...(busca ? [`Busca: ${busca}`] : [])].join(' · ') || 'Sem recorte';
-    const nota = `${T('Sell Out', 'Sell In')} · ${nomePg} · corte ${corteRot()} · ${resumo}`;
-    const abas = [{nome: 'Recorte', titulo: `Governança CTO · ${T('Sell Out', 'Sell In')} · ${nomePg}`, nota: 'Recorte marcado no site no momento da exportação.', cab: [['Item', 'Valor']], linhas: linhasRecorte()}];
+    const nota = `${PERNA()} · ${nomePg} · ${MODO === 'ex' ? 'janela ' + exJanela().txt : 'corte ' + corteRot()} · ${resumo}`;
+    const abas = [{nome: 'Recorte', titulo: `Governança CTO · ${PERNA()} · ${nomePg}`, nota: 'Recorte marcado no site no momento da exportação.', cab: [['Item', 'Valor']], linhas: linhasRecorte()}];
     if (S.page === 'base' || S.page === 'si-base') {
       const B = linhasBase();
       abas.push({nome: 'Base do recorte', titulo: 'Base do recorte', nota, cab: [CAB()], linhas: B.map(r => celulas(r).map((x, i) => (i < 2 ? {v: x, s: 7} : typeof x === 'number' ? {v: x, s: i === 15 ? 2 : 4} : x)))});
@@ -1723,6 +2357,7 @@ async function exportarExcel(btn) {
       let h2 = nomePg, h2sub = '';
       div.querySelectorAll('h2.sec, table').forEach(el => {
         if (el.tagName === 'H2') { const sp = el.querySelector('span'); h2sub = sp ? sp.textContent.trim() : ''; h2 = el.textContent.replace(h2sub, '').trim().replace(/\.$/, '') || nomePg; return; }
+        if (el.closest('[data-xls="fora"]')) return;   // versão de tela de uma tabela que sai completa no Excel por outra (escondida)
         const card = el.closest('.card');   // o rótulo da tabela é o último eyebrow do card que vem ANTES dela
         const ebs = card ? [...card.querySelectorAll('.eyebrow')].filter(e => e.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) : [];
         const eb = ebs[ebs.length - 1], te = eb ? eb.textContent.trim() : '';
@@ -1735,7 +2370,7 @@ async function exportarExcel(btn) {
     if (abas.length === 1) abas[0].linhas.push(['Observação', 'Esta página não tem tabela; o recorte segue registrado acima.']);
     const blob = await gerarXlsx(abas);
     const a = document.createElement('a'), d0 = new Date(), data = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
-    a.href = URL.createObjectURL(blob); a.download = `Governanca_CTO_${T('SellOut', 'SellIn')}_${semAcento(nomePg).replace(/[^a-z0-9]+/g, '_')}_${data}.xlsx`;
+    a.href = URL.createObjectURL(blob); a.download = `Governanca_CTO_${MODO === 'ex' ? 'ExecucaoDiretos' : T('SellOut', 'SellIn')}_${semAcento(nomePg).replace(/[^a-z0-9]+/g, '_')}_${data}.xlsx`;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     btn.textContent = 'Excel baixado';
   } catch (e) { btn.textContent = 'Não deu para gerar'; console.error(e); }
@@ -1789,14 +2424,14 @@ function gruposDaPagina() {
   return {capa, grupos: grupos.filter(g => !SECOES_FORA.test(g.titulo))};
 }
 function recorteSlide() {   // o resumo já sai escapado (tit); soma a busca digitada na tabela, como no Excel
-  const busca = {'redes-scan': S.ui.scbusca, 'redes-col': S.ui.clbusca, confronto: S.ui.cbusca}[S.page];
+  const busca = {'redes-scan': S.ui.scbusca, 'redes-col': S.ui.clbusca, confronto: S.ui.cbusca, 'ex-lojas': S.ui.exbusca}[S.page];
   return [recorteResumo(), busca ? 'Busca: ' + esc(busca) : ''].filter(Boolean).join(' · ') || 'Visão completa da regional, sem filtro';
 }
 function moldeSlide(nomePg, titulo, sub) {
   const s = document.createElement('div'); s.className = 'slide';
-  s.innerHTML = `<div class="s-top"><img src="assets/reckitt_logo.png" alt="Reckitt"><b>Governança CTO</b><span>${T('Sell Out', 'Sell In')} · ${esc(nomePg)}</span><span class="s-rec">${recorteSlide()} · corte ${esc(corteRot())}</span></div>
+  s.innerHTML = `<div class="s-top"><img src="assets/reckitt_logo.png" alt="Reckitt"><b>Governança CTO</b><span>${PERNA()} · ${esc(nomePg)}</span><span class="s-rec">${recorteSlide()} · ${MODO === 'ex' ? 'janela ' + esc(exJanela().txt) : 'corte ' + esc(corteRot())}</span></div>
     ${titulo ? `<div class="s-tit"><h2>${esc(titulo)}. <span>${esc(sub)}</span></h2></div>` : ''}<div class="s-corpo"><div class="s-escala"></div></div>
-    <div class="s-pe"><span>${MODO === 'so' && fontesDaPagina().length ? esc(fontesDaPagina().filter(f => !f.congelada).map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : `Atualizado em ${esc(D.gerado.split(' ')[0])}`}${MODO === 'si' && D.om ? ` · pedidos de ${omData()}` : ''} · uso interno</span><span class="s-num"></span></div>`;
+    <div class="s-pe"><span>${MODO === 'so' && fontesDaPagina().length ? esc(fontesDaPagina().filter(f => !f.congelada).map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : MODO === 'ex' && fontesEx().length ? esc(fontesEx().map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : `Atualizado em ${esc(D.gerado.split(' ')[0])}`}${MODO === 'si' && D.om ? ` · pedidos de ${omData()}` : ''} · uso interno</span><span class="s-num"></span></div>`;
   return s;
 }
 function encaixar(s) {   // mede, aplica a escala e mede de novo (gráfico e tabela mudam de altura quando a largura muda)
@@ -1821,8 +2456,8 @@ function montarSlides() {
   // capa: o título da página, o recorte e o primeiro bloco (os números do topo)
   const sc = moldeSlide(nomePg, '', ''); sc.classList.add('capa');
   const h1 = capa ? capa.querySelector('h1') : null;
-  sc.querySelector('.s-escala').innerHTML = `<p class="eyebrow">${esc(T('Sell Out', 'Sell In'))} · ${esc(nomePg)}</p><h1 class="s-h1">${h1 ? h1.innerHTML : esc(nomePg)}</h1>
-    <p class="s-sub">${recorteSlide()} · acumulado de jan a ${esc(corteRot())}</p>`;
+  sc.querySelector('.s-escala').innerHTML = `<p class="eyebrow">${esc(PERNA())} · ${esc(nomePg)}</p><h1 class="s-h1">${h1 ? h1.innerHTML : esc(nomePg)}</h1>
+    <p class="s-sub">${recorteSlide()} · ${MODO === 'ex' ? `MSL na janela de ${esc(exJanela().txt)}, contra ${esc(exJanela().antTxt)}` : `acumulado de jan a ${esc(corteRot())}`}</p>`;
   const su = capa ? capa.querySelector('.shareuf') : null;   // market share por UF (Redes Scanntech): fica no título, então vai para a capa; a tabela escondida é só do Excel
   if (su) { su.querySelectorAll('.su-xls').forEach(x => x.remove()); const b = limparParaSlide(su); if (b) sc.querySelector('.s-escala').appendChild(b); }
   const prim = grupos.length && !grupos[0].titulo ? grupos.shift() : null;
@@ -1900,7 +2535,7 @@ function gerarPDF(btn, prontos) {
   } else slides = montarSlides();
   const titulo0 = document.title, d0 = new Date(), nomePg = PAGES.find(p => p[0] === S.page)[1];
   const rc = FILTROS.filter(([k]) => S.f[k].size).map(([k]) => [...S.f[k]].map(i => dic[k][i]).join('+')).join(' · ').replace(/[\/:*?"<>|]/g, '').slice(0, 60);
-  document.title = `Governança CTO · ${T('Sell Out', 'Sell In')} · ${nomePg}${rc ? ' · ' + rc : ''} · ${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
+  document.title = `Governança CTO · ${PERNA()} · ${nomePg}${rc ? ' · ' + rc : ''} · ${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
   const css = document.createElement('style'); css.id = 'estilo-pdf'; css.textContent = '@page { size: 13.333in 7.5in; margin: 0; }';
   document.head.appendChild(css); document.body.classList.add('imprimindo');
   let feito = false;
@@ -1918,7 +2553,7 @@ function render(topo = true) {
   const lados = [...document.querySelectorAll('#app .shelf, #app .tw')].map(x => x.scrollLeft);
   const app = document.getElementById('app');
   app.innerHTML = paginaHTML();
-  document.title = (S.page === 'inicio' || S.page === 'si-inicio' ? '' : PAGES.find(p => p[0] === S.page)[1] + ' · ') + 'Governança CTO · ' + T('Sell Out', 'Sell In');
+  document.title = (S.page === 'inicio' || S.page === 'si-inicio' || S.page === 'ex-inicio' ? '' : PAGES.find(p => p[0] === S.page)[1] + ' · ') + 'Governança CTO · ' + PERNA();
   if (rod) rod.innerHTML = (D.rodape || []).map(t => `<p>${esc(t)}</p>`).join('');
   ['scbusca', 'clbusca'].forEach(idb => {   // busca das redes: redesenha só a tabela
     const inp = document.getElementById(idb); if (!inp) return;
@@ -1934,15 +2569,25 @@ function render(topo = true) {
     cb.addEventListener('input', e => { if (!e.isComposing) aplica(); });
     cb.addEventListener('compositionend', aplica);
   }
+  const xb = document.getElementById('exbusca');   // busca das lojas da Execução: redesenha só a tabela
+  if (xb) {
+    let tB = null;
+    const aplica = () => { clearTimeout(tB); tB = setTimeout(() => { S.ui.exbusca = xb.value; const box = document.getElementById('ex-lojas-tab'); if (box) box.innerHTML = exLojasPrincipal(); }, 150); };
+    xb.addEventListener('input', e => { if (!e.isComposing) aplica(); });
+    xb.addEventListener('compositionend', aplica);
+  }
+  let mantidos = false;
   if (!topo) {
     scrollTo({top: y});
     const novos = document.querySelectorAll('#app .shelf, #app .tw');
-    if (novos.length === lados.length) novos.forEach((x, i) => { x.scrollLeft = lados[i]; });
+    if (novos.length === lados.length) { novos.forEach((x, i) => { x.scrollLeft = lados[i]; }); mantidos = true; }
   }
+  if (!mantidos) document.querySelectorAll('#app .tw.fim').forEach(x => { x.scrollLeft = x.scrollWidth; });   // matriz mês a mês da Execução: abre nos meses mais recentes, os da janela (a 1ª coluna fica fixa)
 }
 
 Object.assign(PAGINAS, {inicio: pgInicio, geral: () => comAbasMarca(pgGeral(), 'geral'), hn: () => comAbasMarca(pgHN(), S.page), diretor: pgDiretor, clientes: pgSoClientes, executivos: pgSoExec,
   'redes-scan': () => comAbas(pgRedesScan(), 'redes-scan'), 'redes-col': () => comAbas(pgRedesCol(), 'redes-col'), confronto: pgConfronto, depara: pgDepara, base: pgBase,
   'si-inicio': pgSiInicio, 'si-geral': () => comAbasMarca(pgSiGeral(), 'si-geral'), 'si-hn': () => comAbasMarca(pgHN(), 'si-hn'), 'si-diretor': pgDiretor, 'si-clientes': pgSiClientes, 'si-exec': pgSiExec, 'si-q4': pgSiQ4, 'si-mes': pgSiMes, 'si-rv': pgSiRV, 'si-base': pgBase});
+Object.assign(PAGINAS, {'ex-inicio': pgExInicio, 'ex-dados': pgExDados, 'ex-diretor': pgExDiretor, 'ex-clientes': pgExClientes, 'ex-lojas': pgExLojas, 'ex-executivos': pgExExecutivos, 'ex-skus': pgExSkus});
 lerHash(); filtrar(); gravarHash(); fbar(); render();   // o endereço passa a mostrar só o recorte que foi aplicado
 })();
