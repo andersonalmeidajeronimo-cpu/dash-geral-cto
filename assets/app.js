@@ -153,7 +153,7 @@ function cubo(med, {marcas = null, segs = null, chave = null, porMarca = false, 
     const i = (r[0] - ANO0) * 12 + r[1] - 1;
     a[i] = (isNaN(a[i]) ? 0 : a[i]) + r[col];
   }
-  if (!semCorte) for (const a of out.values()) for (let m = S.corte; m < 12; m++) a[36 + m] = NaN;   // 2026 só até o corte
+  if (!semCorte) { const fs = fimSerie('base'); for (const a of out.values()) for (let m = fs; m < 12; m++) a[36 + m] = NaN; }   // 2026 só até o corte (e o mês parcial logo depois dele, marcado)
   return out;
 }
 const um = (med, o) => cubo(med, o).get('_') || new Float64Array(48).fill(NaN);
@@ -186,13 +186,14 @@ const pc = x => (isFinite(x) ? (x > 0 ? '+' : '') + nf1.format(x * 100) + '%' : 
 const p1 = x => (isFinite(x) ? nf1.format(x * 100) + '%' : '');
 const cls = x => (!isFinite(x) ? '' : x > 0.0005 ? 'up' : x < -0.0005 ? 'down' : '');
 const vc = x => (isFinite(x) ? `<span class="vr ${cls(x) || 'flat'}">${pc(x)}</span>` : '');   // selo de crescimento/perda nas tabelas
+const vcm = (x, m, k) => (ehParcial(m, 2026, k) && isFinite(x) ? `<span class="vr parc">${pc(x)}</span>` : vc(x));   // variação do mês parcial em cinza: ainda não é perda nem ganho
 const vbig = x => (isFinite(x) ? `<span class="vbig ${cls(x) || 'flat'}">${x > 0.0005 ? '▲' : x < -0.0005 ? '▼' : '●'} ${pc(x)}</span>` : '');   // destaque nos cards e títulos
 const fmtMed = (med, x) => (med === 'rs' ? mi(x) : isFinite(x) ? nf0.format(x) : 'sem dado');
 const semAcento = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tit = s => esc(s).toLowerCase().replace(/(^|[\s(+.-])([a-zà-ú])/g, (m, a, b) => a + b.toUpperCase()).replace(/\bDf\b|\bGo\b|\bMs\b|\bMt\b|\bTo\b|\bPa\b|\bJc\b|\bDac\b|\bSto\b|\bVmu\b|\bVlp\b|\bVps\b|\bA\.s\.e\b/g, x => x.toUpperCase());
 const mkCls = m => (m === 'VEJA' ? 'mk-veja' : m === 'VANISH' ? 'mk-vanish' : '');
-const corteTxt = () => `jan a ${mes(S.corte)}`;
+const corteTxt = () => `jan a ${mes(cR())}${marcaParc(cR())}`;   // "jan a out*" quando o corte é o mês parcial; nas redes, o corte da fonte
 
 /* ---------- componentes ---------- */
 const tip = document.getElementById('tip');
@@ -233,20 +234,20 @@ function chart(a, med, alto = 250, larg = null, rotulos = true, opc = {}) {
       s += `<rect x="${x0 + 2}" y="${H - pb - hp}" width="${bw}" height="${hp}" rx="4" fill="#6E6E73"/>`;
       if (comValor) s += `<text class="vl" x="${x0 + 2 + bw / 2}" y="${H - pb - hp - 7}" text-anchor="middle" font-size="12" font-weight="600" fill="#6E6E73">${curto(p26)}</text>`;
       const vp = varr(p26, a25), rs_ = med === 'rs' ? 'R$ ' : '';
-      s += `<text x="${x0}" y="${H - (comVar ? 30 : 8)}" text-anchor="middle" font-size="11" fill="#6E6E73">${gw >= 34 ? MESES[m - 1] : MESES[m - 1][0]}</text>`;
+      s += `<text x="${x0}" y="${H - (comVar ? 30 : 8)}" text-anchor="middle" font-size="11" fill="#6E6E73">${(gw >= 34 ? MESES[m - 1] : MESES[m - 1][0]) + marcaParc(m, 2026, opc.pk)}</text>`;
       if (comVar && isFinite(vp)) s += `<text x="${x0}" y="${H - 8}" text-anchor="middle" font-size="12.5" font-weight="700" fill="#6E6E73">${pc(vp)}</text>`;
       s += `<rect x="${(m - 1) * gw}" y="0" width="${gw}" height="${H}" fill="transparent" data-tip="${esc(`<b>${MESES[m - 1]}</b> · 2025: ${rs_}${n0(a25) || 'sem dado'} · Plano Q4 (AR): ${rs_}${n0(p26)} ${isFinite(vp) ? '· ' + pc(vp) : ''}`)}"/>`;
       continue;
     }
-    s += `<text x="${x0}" y="${H - (comVar ? 30 : 8)}" text-anchor="middle" font-size="11" fill="#6E6E73">${gw >= 34 ? MESES[m - 1] : MESES[m - 1][0]}</text>`;
+    s += `<text x="${x0}" y="${H - (comVar ? 30 : 8)}" text-anchor="middle" font-size="11" fill="#6E6E73">${(gw >= 34 ? MESES[m - 1] : MESES[m - 1][0]) + marcaParc(m, 2026, opc.pk)}</text>`;
     const vm = (opc.fv || varr)(a26, a25);
-    if (comVar && isFinite(vm)) s += `<text x="${x0}" y="${H - 8}" text-anchor="middle" font-size="12.5" font-weight="700" fill="${vm > 0.0005 ? '#1D7A34' : vm < -0.0005 ? '#D70015' : '#6E6E73'}">${pc(vm)}</text>`;
+    if (comVar && isFinite(vm)) s += `<text x="${x0}" y="${H - 8}" text-anchor="middle" font-size="12.5" font-weight="700" fill="${ehParcial(m, 2026, opc.pk) || Math.abs(vm) <= 0.0005 ? '#6E6E73' : vm > 0 ? '#1D7A34' : '#D70015'}">${pc(vm)}</text>`;   // mês parcial em cinza: ainda não é perda nem ganho
     const vt = opc.semVar ? NaN : (opc.fv || varr)(a26, a25);
-    const t = `<b>${MESES[m - 1]}</b> · 2025: ${med === 'rs' ? 'R$ ' : ''}${n0(a25) || 'sem dado'} · 2026: ${med === 'rs' ? 'R$ ' : ''}${n0(a26) || 'sem dado'} ${isFinite(vt) ? '· ' + pc(vt) : ''}`;
+    const t = `<b>${mesRot(m, 2026, opc.pk)}</b> · 2025: ${med === 'rs' ? 'R$ ' : ''}${n0(a25) || 'sem dado'} · 2026${ehParcial(m, 2026, opc.pk) ? ` parcial até ${parcialDe(opc.pk).ate}` : ''}: ${med === 'rs' ? 'R$ ' : ''}${n0(a26) || 'sem dado'} ${isFinite(vt) ? '· ' + pc(vt) : ''}`;
     s += `<rect x="${(m - 1) * gw}" y="0" width="${gw}" height="${H}" fill="transparent" data-tip="${esc(t)}"/>`;
   }
-  return s + '</svg><div class="legend"><span><i style="background:#D2D2D7"></i>2025</span><span><i style="background:#FF007F"></i>2026 até ' + mes(S.corte) + '</span>' +
-    (pa ? '<span><i style="background:#6E6E73"></i>Plano do Q4 (AR de 29/09)</span>' : '') + '</div>';
+  return s + '</svg><div class="legend"><span><i style="background:#D2D2D7"></i>2025</span><span><i style="background:#FF007F"></i>2026 até ' + mes(fimSerie(opc.pk)) + marcaParc(fimSerie(opc.pk), 2026, opc.pk) + '</span>' +
+    (pa ? '<span><i style="background:#6E6E73"></i>Plano do Q4 (AR de 29/09)</span>' : '') + (notaParcial(opc.pk) ? `<span class="parc-nota">${esc(notaParcial(opc.pk))}</span>` : '') + '</div>';
 }
 
 function tabelaMensal(a, med, pa = null) {
@@ -256,14 +257,15 @@ function tabelaMensal(a, med, pa = null) {
           A.slice(1).map((_, j) => `<th>${vs(j)}</th>`).join('') + (tp ? '<th>Plano vs 25</th>' : '') + '<th>Tri 26 vs 25</th></tr></thead><tbody>';
   for (let m = 1; m <= 12; m++) {
     const p = tp ? v(pa, 2026, m) : NaN;
-    h += `<tr><td class="b">${MESES[m - 1]}</td>` + A.map(y => `<td class="${y === 2026 ? 'b' : ''}">${n0(v(a, y, m))}</td>`).join('') + (tp ? `<td class="b pl">${n0(p)}</td>` : '');
-    for (let j = 0; j < U; j++) h += `<td>${vc(varr(v(a, A[j + 1], m), v(a, A[j], m)))}</td>`;
+    h += `<tr><td class="b">${mesRot(m)}</td>` + A.map(y => `<td class="${y === 2026 ? 'b' : ''}">${n0(v(a, y, m))}</td>`).join('') + (tp ? `<td class="b pl">${n0(p)}</td>` : '');
+    for (let j = 0; j < U; j++) h += `<td>${A[j + 1] === 2026 ? vcm(varr(v(a, 2026, m), v(a, A[j], m)), m) : vc(varr(v(a, A[j + 1], m), v(a, A[j], m)))}</td>`;
     if (tp) h += `<td>${vc(varr(p, v(rf, 2025, m)))}</td>`;
     if (m % 3 === 1) {
       const ms = [m, m + 1, m + 2].filter(x => x <= S.corte && isFinite(v(a, 2026, x)));
       let q = ms.length ? varr(agg(a, 2026, ms, media), agg(a, 2025, ms, media)) : NaN, pl = '';
       if (!ms.length && tp && m === 10) { q = varr(agg(pa, 2026, Q4M, false), agg(rf, 2025, Q4M, false)); pl = '<small class="pl"> plano</small>'; }
-      h += `<td class="q" rowspan="3">${vc(q)}${isFinite(q) ? pl : ''}</td>`;
+      const qp = ms.some(x => ehParcial(x));   // trimestre com o mês parcial: cinza e com asterisco
+      h += `<td class="q" rowspan="3">${qp && isFinite(q) ? `<span class="vr parc">${pc(q)}*</span>` : vc(q)}${isFinite(q) ? pl : ''}</td>`;
     }
     h += '</tr>';
   }
@@ -292,7 +294,7 @@ function blocoIn(bid) {
   const {rotulo, opts} = BLOCOS[bid], med = MED[S.ui['m' + bid]] ? S.ui['m' + bid] : 'rs';
   const a = um(med, opts), y26 = ytd(a, 2026, med), y25 = ytd(a, 2025, med), d = varr(y26, y25);
   const pa = MODO === 'si' ? umP(med, opts) : null;
-  const frase = med === 'pdv' ? `${n0(y26)} PDVs por mês.` : med === 'rs' ? `${mi(y26)} até ${mes(S.corte)}.` : `${n0(y26)} caixas até ${mes(S.corte)}.`;
+  const ac = mes(S.corte) + marcaParc(S.corte), frase = med === 'pdv' ? `${n0(y26)} PDVs por mês.` : med === 'rs' ? `${mi(y26)} até ${ac}.` : `${n0(y26)} caixas até ${ac}.`;
   const resto = isFinite(d) ? ` ${vbig(d)} <span>sobre 2025${med === 'pdv' ? ', na média mensal' : ''}.</span>` : ' <span>Sem base de 2025 para comparar.</span>';
   return `<p class="eyebrow">${esc(rotulo)} · ${MED[med].nome}</p><h3>${frase}${resto}</h3>
     <div class="seg" data-bid="${bid}">${Object.keys(MED).map(k => `<button data-act="med" data-bid="${bid}" data-m="${k}" class="${k === med ? 'on' : ''}">${MED[k].nome}</button>`).join('')}</div>
@@ -313,10 +315,10 @@ function kpis(opts, extra = true) {
   const r26 = ytd(r, 2026, 'rs'), r25 = ytd(r, 2025, 'rs'), p26 = ytd(p, 2026, 'pdv'), p25 = ytd(p, 2025, 'pdv');
   let h = card('Sell out ' + corteTxt(), mi(r26), varr(r26, r25), `sobre ${mi(r25)} em 2025`) +
           card('Caixas ' + corteTxt(), n0(ytd(c, 2026, 'cx')), varr(ytd(c, 2026, 'cx'), ytd(c, 2025, 'cx')), 'sobre 2025') +
-          card('PDVs positivados', n0(p26), varr(p26, p25), `média por mês, contra ${n0(p25)}`);
+          card('PDVs positivados' + marcaParc(S.corte), n0(p26), varr(p26, p25), `média por mês, contra ${n0(p25)}`);
   if (extra) {
     const t26 = r26 / agg(p, 2026, ate(S.corte), false), t25 = r25 / agg(p, 2025, ate(S.corte), false);   // R$ por PDV-mês, mesmos meses
-    h += card('Ticket por PDV', 'R$ ' + n0(t26), varr(t26, t25), `por mês, contra R$ ${n0(t25)}`);
+    h += card('Ticket por PDV' + marcaParc(S.corte), 'R$ ' + n0(t26), varr(t26, t25), `por mês, contra R$ ${n0(t25)}`);
   }
   return `<div class="grid ${extra ? 'g4' : 'g3'}">${h}</div>`;
 }
@@ -364,17 +366,81 @@ function validade() {
     const velho = dias >= 4 || (dias > 0 && util && (dw === 1 || dw === 4 || hoje.getDate() >= 20 || outroMes));
     return {velho, txt: `Pedidos de ${o.slice(6, 8)}/${o.slice(4, 6)}${dias > 0 ? ` · há ${dias} dia${dias > 1 ? 's' : ''}` : ' · hoje'}`};
   }
-  let a = hoje.getFullYear(), m = hoje.getMonth() + 1 - (hoje.getDate() >= 8 ? 1 : 2); if (m <= 0) { m += 12; a--; }   // último mês fechado que o site precisa ter
-  const velho = 2026 < a || (2026 === a && D.ult26 < m);
-  return {velho, txt: `Sell out até ${mes(D.ult26)}/26${velho ? ` · falta ${mes(m)}/${String(a).slice(2)}` : ''}`};
+  const esp = mesEsperado(), a = +esp.slice(0, 4), m = +esp.slice(4), co = fonte('colecta'), p = parcialDe('base');   // último mês fechado que o site precisa ter
+  const fech = p ? p.mes - 1 : D.ult26, velho = 2026 < a || (2026 === a && fech < m);   // o mês parcial não conta como fechado
+  const falta = velho ? ` · falta ${p && p.mes === m && a === 2026 ? 'fechar ' : ''}${mes(m)}/${String(a).slice(2)}` : '';
+  return {velho, parcial: !!p, txt: `Sell out até ${mes(D.ult26)}/26${p ? ` · parcial até ${p.ate}` : ''}${co && co.extraido ? ` · Colecta de ${co.extraido.slice(0, 5)}` : ''}${falta}`};
 }
-const seloValidade = () => { const x = validade(); return x ? `<span class="selo ${x.velho ? 'warn' : 'ok'}" title="${x.velho ? 'Dado desatualizado: veja o lembrete da Governança CTO' : 'Dado em dia'}">${esc(x.txt)}</span>` : ''; };
+const seloValidade = () => { const x = validade(); if (!x) return ''; const c = x.velho ? 'warn' : x.parcial ? 'parc' : 'ok';
+  return `<span class="selo ${c}" title="${{warn: 'Dado desatualizado: veja o lembrete da Governança CTO', parc: 'Meses fechados em dia; o mês em curso entra parcial e ainda cresce até o fechamento', ok: 'Dado em dia'}[c]}">${esc(x.txt)}</span>`; };
+
+/* ---------- data de cada fonte do Sell Out: quando foi extraída e até quando vai o dado (textos e datas vêm do arquivo cifrado) ---------- */
+const FONTES_PG = {'redes-scan': ['scanntech', 'scanntech_marcas', 'scanntech_share_uf', 'redes_colecta'], 'redes-col': ['redes_colecta', 'colecta_marcas', 'scanntech']};
+const FONTES_PADRAO = ['colecta', 'mtrix'];
+function mesEsperado() {   // AAAAMM do último mês fechado que o site precisa ter: a partir do dia 8, o mês anterior
+  const h = new Date(); let a = h.getFullYear(), m = h.getMonth() + 1 - (h.getDate() >= 8 ? 1 : 2); if (m <= 0) { m += 12; a--; }
+  return `${a}${String(m).padStart(2, '0')}`;
+}
+const amTxt = am => `${mes(+am.slice(4))}/${am.slice(2, 4)}`;
+const fonte = k => ((DSO.atualizacao || {}).fontes || []).find(f => f.id === k) || null;
+const fontesDaPagina = (pg = S.page) => (FONTES_PG[pg] || FONTES_PADRAO).map(fonte).filter(Boolean);
+const fechadoFonte = f => f.fechado || f.ate;   // a régua compara o último mês FECHADO: o parcial não conta
+const estadoFonte = f => (f.congelada ? 'flat' : fechadoFonte(f) < mesEsperado() ? 'warn' : f.parcial ? 'parc' : 'ok');
+const faltaFonte = f => `Falta ${f.parcial && f.ate === mesEsperado() ? 'fechar ' : ''}${amTxt(mesEsperado())}`;
+function quandoFonte(f, curto) {   // "extraído em 22/10/2026 · out/26 parcial até 21/10"; curto: "extraído em 22/10, out/26 parcial até 21/10"
+  if (f.congelada) return `base encerrada, dado até ${f.ate_txt}`;
+  const ext = f.extraido ? `extraído em ${curto ? f.extraido.slice(0, 5) : f.extraido}` : '';
+  return [ext, f.parcial ? `${f.ate_txt} parcial até ${f.ate_dia.slice(0, 5)}` : `dado até ${f.ate_txt}`].filter(Boolean).join(curto ? ', ' : ' · ');
+}
+const avisoFonte = f => (estadoFonte(f) === 'warn' ? `Desatualizado: ${faltaFonte(f).toLowerCase()}. ` : '') + (f.obs || '');
+function faixaFontes() {   // selos "Dados de" logo abaixo do título de cada página do Sell Out, com a nota do mês parcial
+  const L = MODO === 'so' ? fontesDaPagina() : []; if (!L.length) return '';
+  const np = notaParcial();
+  return `<div class="fontes"><span class="fontes-lab">Dados de</span>` +
+    L.map(f => `<span class="selo ${estadoFonte(f)}" title="${esc(avisoFonte(f))}">${esc(f.nome)} · ${esc(quandoFonte(f))}</span>`).join('') +
+    `<span class="fontes-site">site publicado em ${esc(DSO.gerado.split(' ')[0])}</span>${np ? `<span class="fontes-nota">${esc(np)}</span>` : ''}</div>`;
+}
+const topoFontes = () => (DSO.atualizacao ? ['Sell Out', ...['scanntech'].map(fonte).filter(f => f && f.extraido).map(f => `${f.nome} de ${f.extraido.slice(0, 5)}`), `site de ${DSO.gerado.slice(0, 5)}`].join(' · ')
+  : `Atualizado em ${DSO.gerado.split(' ')[0]} · Sell Out`);   // arquivo antigo, sem a data das fontes: o texto de antes
+
+/* ---------- mês parcial do Sell Out: o mês em curso entra na base marcado como parcial ----------
+   base (Colecta por segmento) = DSO.parcial; redes = a fonte da página. Sell In nunca marca. */
+const PARC_PG = {'redes-scan': 'scanntech', 'redes-col': 'redes_colecta'};
+const ULT_RD = {scanntech: ['ult_scan'], scanntech_marcas: ['ult_scanm', 'ult_scan'], redes_colecta: ['ult_col'], colecta_marcas: ['ult_colm', 'ult_col']};
+const ultRd = k => String((ULT_RD[k] || []).map(x => RD && RD[x]).find(Boolean) || '');   // último mês (AAAAMM) que a base de redes tem desta fonte
+let FR = null;   // fonte de redes da conta em curso (scanntech, scanntech_marcas, redes_colecta, colecta_marcas); null = a da página
+const emFonte = (k, fn) => { const o = FR; FR = k; try { return fn(); } finally { FR = o; } };
+const kPadrao = () => FR || PARC_PG[S.page] || 'base';
+function parcialDe(k = kPadrao()) {   // {mes, ate: 'DD/MM'} do mês parcial da série, ou null
+  if (MODO !== 'so') return null;
+  if (k === 'base') return DSO.parcial && DSO.parcial.mes === DSO.ult26 ? DSO.parcial : null;
+  const f = fonte(k), ult = RD ? ultRd(k) : '';
+  return f && f.parcial && f.ate === ult && f.ate.startsWith('2026') ? {mes: +f.ate.slice(4), ate: f.ate_dia.slice(0, 5)} : null;
+}
+function corteDe(k = kPadrao()) {   // último mês de 2026 do acumulado e da tendência: o corte do site, limitado ao último mês da fonte (mês que a fonte não tem não entra como zero)
+  const u = k !== 'base' ? ultRd(k) : '';
+  return u.startsWith('2026') ? Math.min(S.corte, +u.slice(4)) : S.corte;
+}
+function fimSerie(k = kPadrao()) {   // até onde vai a série mês a mês: o corte e, quando ele é o último mês fechado, também o mês parcial, marcado
+  const c = corteDe(k), p = parcialDe(k);
+  return p && p.mes === c + 1 ? p.mes : c;
+}
+const cR = () => corteDe(FR || 'base');   // corte da conta em curso (nas redes, o da fonte)
+const ehParcial = (m, ano = 2026, k) => { const p = ano === 2026 ? parcialDe(k) : null; return !!p && m === p.mes && m <= fimSerie(k); };   // o mês parcial aparece no corte ou logo depois dele
+const marcaParc = (m, ano = 2026, k) => (ehParcial(m, ano, k) ? '*' : '');
+const mesRot = (m, ano = 2026, k) => MESES[m - 1] + marcaParc(m, ano, k);   // rótulo de mês nos eixos e tabelas: OUT* no mês parcial
+const corteRot = () => { const p = parcialDe('base'); return `${mes(S.corte)}/26${ehParcial(S.corte, 2026, 'base') ? ` (parcial até ${p.ate})` : ''}`; };
+function notaParcial(k) {
+  const p = parcialDe(k); if (!p || p.mes > fimSerie(k)) return '';
+  return p.mes > corteDe(k) ? `* ${mes(p.mes)}/26 parcial até ${p.ate}: aparece só na série mês a mês; o acumulado e a tendência vão até ${mes(corteDe(k))}/26, último mês fechado.`
+    : `* ${mes(p.mes)}/26 parcial até ${p.ate}: comparar com ${mes(p.mes)}/25 inteiro subestima o mês.`;
+}
 
 /* ---------- barra global e segmentações ---------- */
 function nav() {
   const topo = document.getElementById('topo');
   if (topo) topo.innerHTML = `<div class="topo-in"><a class="topo-tit" href="#${T('inicio', 'si-inicio')}" data-act="pg" data-pg="${T('inicio', 'si-inicio')}"><h1>Governança CTO</h1></a>
-    <div class="topo-meio">${seloValidade()}<span>Atualizado em ${D.gerado.split(' ')[0]} · ${T('Sell Out', 'Sell In')}</span>${window.DASH_COFRE ? '<a href="#sair" data-act="sair" title="Fechar o acesso neste aparelho">Sair</a>' : ''}</div>
+    <div class="topo-meio">${seloValidade()}<span>${MODO === 'so' ? esc(topoFontes()) : `Atualizado em ${D.gerado.split(' ')[0]} · Sell In`}</span>${window.DASH_COFRE ? '<a href="#sair" data-act="sair" title="Fechar o acesso neste aparelho">Sair</a>' : ''}</div>
     <div class="topo-logo"><img src="assets/reckitt_logo.png" alt="Reckitt"></div></div>`;
   const atual = PAI[S.page] || S.page;
   document.getElementById('gnav').innerHTML = '<div class="nav-rol">' + NAV.filter(([, so, si]) => (MODO === 'si' ? si : so || (DSI && si))).map(([n, so, si]) => {
@@ -397,7 +463,7 @@ function opcoes(k) {
 }
 function fbar() {
   const ativo = FILTROS.some(([k]) => S.f[k].size);
-  document.getElementById('fbar').innerHTML = `<label class="cut">Mês de corte <select data-act="corte">${ate(D.ult26).map(m => `<option value="${m}" ${m === S.corte ? 'selected' : ''}>${mes(m)}/26</option>`).join('')}</select></label>` +
+  document.getElementById('fbar').innerHTML = `<label class="cut">Mês de corte <select data-act="corte">${ate(D.ult26).map(m => `<option value="${m}" ${m === S.corte ? 'selected' : ''}>${mes(m)}/26${parcialDe('base') && parcialDe('base').mes === m ? ' (parcial)' : ''}</option>`).join('')}</select></label>` +
     (DSI ? `<span class="modo" role="tablist" aria-label="Perna"><button data-act="modo" data-m="so" class="${MODO === 'so' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'so'}">Sell Out</button><button data-act="modo" data-m="si" class="${MODO === 'si' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'si'}">Sell In</button></span>` : '') +
     FILTROS.map(([k, n]) => {
       const st = S.f[k];
@@ -488,14 +554,14 @@ addEventListener('resize', () => { clearTimeout(tRz); tRz = setTimeout(() => { i
 
 /* ---------- páginas (mesma ordem das abas do Dash Power Query) ---------- */
 function hero(eyebrow, t1, t2, side = '') {
-  return `<section class="hero${eyebrow ? ' sm' : ''}"><div>${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ''}<h1>${t1} <span>${t2}</span></h1></div>${side}</section>`;
+  return `<section class="hero${eyebrow ? ' sm' : ''}"><div>${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ''}<h1>${t1} <span>${t2}</span></h1>${faixaFontes()}</div>${side}</section>`;
 }
 const recorteResumo = () => FILTROS.filter(([k]) => S.f[k].size).map(([k, n]) => `${n}: ${[...S.f[k]].map(i => tit(dic[k][i])).join(', ')}`).join(' · ');
 function recorteTxt() { return ''; }   // o recorte aparece na faixa "Filtros:" do topo, nos slides e no Excel
 
 function pgInicio() {
   const op = {marcas: gMarcas(), segs: gSegs()};
-  const side = `<div class="side">${(D.equipe || []).map(([cargo, nome]) => `${esc(cargo)} <span class="lk">${esc(nome)}</span>`).join('<br>')}<br>Corte ${mes(S.corte)}/26 · ${n0(D.rows.length)} linhas na base</div>`;
+  const side = `<div class="side">${(D.equipe || []).map(([cargo, nome]) => `${esc(cargo)} <span class="lk">${esc(nome)}</span>`).join('<br>')}<br>Corte ${corteRot()} · ${n0(D.rows.length)} linhas na base</div>`;
   let h = hero('', 'Governança CTO.', 'Sell out do Centro-Oeste, mês a mês.', side);
   // linha de marcas
   const pn = [['geral', 'Total', null], ...['VEJA','VANISH','HARPIC','FINISH'].map(m => [m.toLowerCase(), tit(m), [m]]), ['hn', 'H&N', ['SUSTAGEN','JONTEX','OLLA','VEET']]];
@@ -557,7 +623,7 @@ function pgGeral() {
   const div = (a, b) => { const o = new Float64Array(48).fill(NaN); for (let i = 0; i < 48; i++) o[i] = a[i] / b[i]; return o; };
   const tk = div(r, p), rc = div(r, c);
   const mini = (a, den, t, sub) => `<div class="card"><p class="eyebrow">${t}</p><h3>R$ ${n2(agg(r, 2026, ate(S.corte), false) / agg(den, 2026, ate(S.corte), false))} no acumulado. <span>${sub}</span></h3><div class="tw"><table><thead><tr><th>Mês</th>${ANOS.map(y => `<th>${y}</th>`).join('')}<th>26 vs 25</th></tr></thead><tbody>` +
-    ate(12).map(m => `<tr><td class="b">${MESES[m - 1]}</td>${ANOS.map(y => `<td class="${y === 2026 ? 'b' : ''}">${n2(v(a, y, m))}</td>`).join('')}<td>${vc(varr(v(a, 2026, m), v(a, 2025, m)))}</td></tr>`).join('') + '</tbody></table></div></div>';
+    ate(12).map(m => `<tr><td class="b">${mesRot(m)}</td>${ANOS.map(y => `<td class="${y === 2026 ? 'b' : ''}">${n2(v(a, y, m))}</td>`).join('')}<td>${vcm(varr(v(a, 2026, m), v(a, 2025, m)), m)}</td></tr>`).join('') + '</tbody></table></div></div>';
   h += `<h2 class="sec">Ticket e R$ por caixa. <span>Quanto cada PDV compra e quanto vale cada caixa.</span></h2><div class="grid g2">` +
     mini(tk, p, 'Ticket médio · R$ por PDV', 'Por PDV positivado no mês.') + mini(rc, c, 'R$ por caixa', 'Caixas não comparam entre ferramentas.') + '</div>';
   const MK = dic.marca.map((m, i) => [i, tit(m)]).filter(([i]) => i !== TODAS);
@@ -591,18 +657,18 @@ function secaoMarca(chave, rotulo, nomes) {
   const meses = [...ate(12).map(m => [2025, m]), ...ate(12).map(m => [2026, m])];
   h += `<h2 class="sec">Segmentos mês a mês. <span>${med === 'pdv' ? 'PDVs somam segmentos (o mesmo PDV aparece em mais de um).' : 'Peso de cada segmento no acumulado de 2026.'}</span></h2><div class="card">
     ${botoesMat}
-    <div class="tw"><table><thead><tr><th>Segmento</th>${meses.map(([y, m]) => `<th>${MESES[m - 1]}/${String(y).slice(2)}</th>`).join('')}<th>${media ? 'Média' : 'YTD'} 25</th><th>${media ? 'Média' : 'YTD'} 26</th><th>26 vs 25</th>${media ? '' : '<th>Peso 26</th>'}</tr></thead><tbody>` +
+    <div class="tw"><table><thead><tr><th>Segmento</th>${meses.map(([y, m]) => `<th>${MESES[m - 1]}/${String(y).slice(2)}${marcaParc(m, y)}</th>`).join('')}<th>${media ? 'Média' : 'YTD'} 25</th><th>${media ? 'Média' : 'YTD'} 26</th><th>26 vs 25</th>${media ? '' : '<th>Peso 26</th>'}</tr></thead><tbody>` +
     [...L, TT].map(x => `<tr class="${x.s < 0 ? 'tot' : ''}"><td class="b">${nomeS(x.s)}</td>${meses.map(([y, m]) => `<td class="${y === 2026 ? 'b' : ''}">${n0(v(x.a, y, m))}</td>`).join('')}
       <td>${n0(x.y25)}</td><td class="b">${n0(x.y26)}</td><td>${vc(varr(x.y26, x.y25))}</td>${media ? '' : `<td>${p1(x.y26 / TT.y26)}</td>`}</tr>`).join('') + '</tbody></table></div>';
   // trimestres
   h += `<p class="eyebrow" style="margin-top:26px">Trimestres · ${MED[med].nome}</p><div class="tw"><table><thead><tr><th>Segmento</th>` +
-    [1, 2, 3, 4].map(q => `<th>Q${q}'25</th><th>Q${q}'26</th><th>Desvio Q${q}</th>`).join('') + `${media ? '' : '<th>Peso seg.</th>'}<th>YTD</th></tr></thead><tbody>` +
+    [1, 2, 3, 4].map(q => { const ms = [q * 3 - 2, q * 3 - 1, q * 3], pq = ms.some(m => ehParcial(m)) ? '*' : '', pd = ms.some(m => ehParcial(m) && m <= S.corte) ? '*' : ''; return `<th>Q${q}'25</th><th>Q${q}'26${pq}</th><th>Desvio Q${q}${pd}</th>`; }).join('') + `${media ? '' : '<th>Peso seg.</th>'}<th>YTD</th></tr></thead><tbody>` +
     [...L, TT].map(x => `<tr class="${x.s < 0 ? 'tot' : ''}"><td class="b">${nomeS(x.s)}</td>` + [1, 2, 3, 4].map(q => {
       const ms = [q * 3 - 2, q * 3 - 1, q * 3], ok = ms.filter(m => m <= S.corte && isFinite(v(x.a, 2026, m)));
       const a26 = agg(x.a, 2026, ms, media), a25 = agg(x.a, 2025, ms, media), d = ok.length ? varr(agg(x.a, 2026, ok, media), agg(x.a, 2025, ok, media)) : NaN;
       return `<td>${n0(a25)}</td><td class="b">${n0(a26)}</td><td>${vc(d)}</td>`;
     }).join('') + `${media ? '' : `<td>${p1(x.y26 / TT.y26)}</td>`}<td class="b">${vc(varr(x.y26, x.y25))}</td></tr>`).join('') + '</tbody></table></div>' +
-    `<p class="note" style="margin:10px 0 0">O desvio do trimestre compara só os meses de 2026 já fechados contra os mesmos meses de 2025.</p></div>`;
+    `<p class="note" style="margin:10px 0 0">O desvio do trimestre compara só os meses de 2026 ${parcialDe() && parcialDe().mes <= S.corte ? 'até o corte' : 'já fechados'} contra os mesmos meses de 2025.${notaParcial() ? ' ' + esc(notaParcial()) : ''}</p></div>`;
   // segmento a segmento
   const RS_ = med === 'rs' ? C : cubo('rs', {marcas: mk, segs: segsG, chave: r => r[COL.segmento]});
   const ordem = L.map(x => x.s);
@@ -717,23 +783,23 @@ const mesesAte = (ano, n) => ate(n).map(m => RM.indexOf(`${ano}${String(m).padSt
 const varR = (a, b) => (isFinite(a) && isFinite(b) && b >= 1000 && a > 0 && a / b <= 10 ? a / b - 1 : NaN);   // evita % absurdo sobre base mínima
 const rsx = v => (Math.abs(v) >= 1e6 ? mi(v) : 'R$ ' + n0(v));   // R$ Mi só a partir de 1 milhão
 const varQ = (a, b) => (isFinite(b) && b >= 1000 && !(a > 0) ? -1 : varR(a, b));   // base relevante e zero agora = parou de vender (-100%)
-function parR(arr, ref) {   // soma 26 e 25 só nos meses até o corte com valor nos dois anos (ref decide o pareamento)
+function parR(arr, ref) {   // soma 26 e 25 só nos meses até o corte (da fonte) com valor nos dois anos (ref decide o pareamento)
   ref = ref || arr; let a = 0, b = 0;
-  for (let m = 1; m <= S.corte; m++) { const i5 = RM.indexOf(`2025${String(m).padStart(2, '0')}`), i6 = RM.indexOf(`2026${String(m).padStart(2, '0')}`);
+  for (let m = 1, c = cR(); m <= c; m++) { const i5 = RM.indexOf(`2025${String(m).padStart(2, '0')}`), i6 = RM.indexOf(`2026${String(m).padStart(2, '0')}`);
     if (ref[i5] > 0 && ref[i6] > 0) { a += arr[i6] || 0; b += arr[i5] || 0; } }
   return [a, b];
 }
 const somaI = (arr, idx) => idx.reduce((s, i) => s + (arr[i] || 0), 0);
-const ytdR = (arr, ano) => somaI(arr, mesesAte(ano, S.corte));
-function triR(arr) {   // últimos 3 meses até o corte contra os 3 anteriores (tendência dentro de 2026)
-  const fim = RM.indexOf(`2026${String(S.corte).padStart(2, '0')}`);
+const ytdR = (arr, ano) => somaI(arr, mesesAte(ano, cR()));
+function triR(arr) {   // últimos 3 meses até o corte (da fonte) contra os 3 anteriores (tendência dentro de 2026)
+  const fim = RM.indexOf(`2026${String(cR()).padStart(2, '0')}`);
   if (fim < 5) return [NaN, NaN];
   return [somaI(arr, [fim - 2, fim - 1, fim]), somaI(arr, [fim - 5, fim - 4, fim - 3])];
 }
 function serie48(arr) {
   const a = new Float64Array(48).fill(NaN);
   RM.forEach((m, i) => { const y = +m.slice(0, 4), mo = +m.slice(4); if (arr[i]) a[(y - ANO0) * 12 + mo - 1] = arr[i]; });
-  for (let m = S.corte; m < 12; m++) a[36 + m] = NaN;
+  for (let m = fimSerie(FR || undefined); m < 12; m++) a[36 + m] = NaN;   // até o corte da fonte, mais o mês parcial logo depois dele
   return a;
 }
 const somaArr = (lista, campo) => { const o = new Array(RM.length).fill(0); lista.forEach(x => x[campo].forEach((v, i) => { o[i] += v || 0; })); return o; };
@@ -772,6 +838,8 @@ function ordena(lista, t, colunas, padrao) {
     const fx = Number.isFinite(x), fy = Number.isFinite(y); if (fx !== fy) return fx ? -1 : 1; if (!fx) return 0;   // sem valor vai para o fim
     return asc ? x - y : y - x; });
 }
+const notaCorteRd = () => { const c = cR(), f = FR && fonte(FR);   // fonte atrasada: a página para no último mês que ela tem
+  return FR && c < S.corte ? `<p class="note">${esc(f ? f.nome : 'A base desta página')} tem dado só até ${mes(c)}/26: nesta página o acumulado e a tendência vão até ${mes(c)}/26.</p>` : ''; };
 const buscaRede = (id, valor, ph) => `<input class="find" id="${id}" type="search" placeholder="${ph}" value="${esc(valor || '')}" aria-label="${ph}">`;
 
 /* ----- Redes Scanntech ----- */
@@ -790,8 +858,98 @@ function scanLinhas() {
   }
   return RD.scan.filter(s => !uf || uf.has(s.uf));
 }
+/* ----- market share por UF no título das Redes Scanntech: share oficial por UF (Scanntech Painel 2.0), um mini gráfico por UF e o consolidado da Área 7 ----- */
+const SU_ORDEM = ['A7', 'DF', 'GO', 'MT', 'MS', 'TO'];
+const shareUF = () => { const Q = RD && RD.share_uf; return Q && Q.ufs && Array.isArray(Q.meses) && Q.ufs.A7 ? Q : null; };   // arquivo de dados antigo, sem o campo: o bloco não aparece
+const suNum = x => (typeof x === 'number' && isFinite(x) ? x : NaN);
+const suVal = (Q, u, ano, m) => { const i = Q.meses.indexOf(`${ano}${String(m).padStart(2, '0')}`); return i >= 0 && Array.isArray(u.sh) ? suNum(u.sh[i]) : NaN; };
+const suPct = x => (isFinite(x) ? nf1.format(x) + '%' : 'sem dado');
+const suPP = d => (isFinite(d) ? `${d >= 0.05 ? '+' : ''}${nf1.format(Math.abs(d) < 0.05 ? 0 : d)} pp` : '');
+const suCls = d => (!isFinite(d) ? 'flat' : d >= 0.3 - 1e-9 ? 'up' : d <= -0.3 + 1e-9 ? 'down' : 'flat');   // semáforo: estável quando a variação fica abaixo de 0,3 pp
+const suRot = am => `${mes(+am.slice(4))}/${am.slice(2, 4)}`;
+const suUm = x => Math.round(x * 10) / 10;   // 1 casa, como na tela
+function suAcum(Q, u, ano, ate) {   // acumulado jan a 'ate' = Reckitt (share x mercado) somada sobre o mercado somado, mês a mês (a mesma conta do arquivo de dados)
+  let r = 0, t = 0;
+  for (let m = 1; m <= ate; m++) {
+    const i = Q.meses.indexOf(`${ano}${String(m).padStart(2, '0')}`), s = i >= 0 ? suNum(u.sh[i]) : NaN, k = i >= 0 && Array.isArray(u.mk) ? suNum(u.mk[i]) : NaN;
+    if (isFinite(s) && k > 0) { r += s / 100 * k; t += k; }
+  }
+  return t > 0 ? r / t * 100 : NaN;
+}
+function suPeriodo(Q) {   // período do card: o mês de corte do site, limitado ao que o painel tem; no último mês fechado, vale o YTD do próprio painel
+  const ya = String(Q.ytd_ate || ''), ano = +Q.ano || +ya.slice(0, 4), mY = +ya.slice(4) || 9, pa = String(Q.parcial || ''), mP = pa.slice(0, 4) === String(ano) ? +pa.slice(4) : 0;
+  const segue = ano === 2026, c = segue ? Math.max(1, Math.min(S.corte, Math.max(mY, mP))) : mY;   // o mês de corte do site é de 2026
+  return {ano, ant: ano - 1, mY, mP, pa, c, cP: c === mP, fim: c === mY && mP === mY + 1 ? mP : c, segue};   // fim = até onde vai a curva do ano: o corte e, no último mês fechado, também o parcial
+}
+function suVals(Q, P, u) {   // acumulado do ano e do anterior e a variação (diferença dos shares já arredondados, a conta fecha na tela)
+  if (P.c === P.mY) return {y6: suNum(u.ytd26), y5: suNum(u.ytd25), d: suNum(u.d)};
+  const y6 = suAcum(Q, u, P.ano, P.c), y5 = suAcum(Q, u, P.ant, P.c);
+  return {y6, y5, d: isFinite(y6) && isFinite(y5) ? suUm(suUm(y6) - suUm(y5)) : NaN};
+}
+function suMini(Q, k, W, P) {   // ano anterior cinza, ano atual rosa; eixo vertical justo nos dados da UF; o mês parcial em ponto vazado, ligado por tracejado
+  const u = Q.ufs[k], H = 92, pl = 28, pr = 8, pt = 8, pb = 18, gw = (W - pl - pr) / 11;
+  const ehP = m => P.mP > 0 && m === P.mP, v6 = m => (m <= P.fim ? suVal(Q, u, P.ano, m) : NaN);
+  const s25 = [], s26 = [];
+  for (let m = 1; m <= 12; m++) { const a = suVal(Q, u, P.ant, m), b = v6(m); if (isFinite(a)) s25.push([m, a]); if (isFinite(b)) s26.push([m, b]); }
+  const xs = [...s25, ...s26].map(p => p[1]); if (!xs.length) return '';
+  const lo = Math.min(...xs), hi = Math.max(...xs), folga = Math.max(0.4, (hi - lo) * 0.12), y0 = Math.floor(lo - folga), y1 = Math.ceil(hi + folga);
+  const px = m => (pl + (m - 1) * gw).toFixed(1), py = x => (pt + (y1 - x) / (y1 - y0) * (H - pt - pb)).toFixed(1);
+  const lin = (L, cor, w) => (L.length > 1 ? `<polyline points="${L.map(([m, x]) => px(m) + ',' + py(x)).join(' ')}" fill="none" stroke="${cor}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"/>` : '');
+  const fech = s26.filter(([m]) => !ehP(m)), ult = fech[fech.length - 1], par = s26.find(([m]) => ehP(m));
+  let s = `<svg class="su-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(`Share ${u.nome} ${P.ant} e ${P.ano} por mês`)}">` +
+    `<line x1="${pl}" x2="${W - pr}" y1="${py(y0)}" y2="${py(y0)}" stroke="#ECECEF" stroke-width="1"/>` +
+    `<text x="${pl - 6}" y="${(+py(y1) + 3).toFixed(1)}" text-anchor="end" font-size="9.5" fill="#86868B">${y1}%</text><text x="${pl - 6}" y="${(+py(y0) + 1).toFixed(1)}" text-anchor="end" font-size="9.5" fill="#86868B">${y0}%</text>`;
+  for (let m = 1; m <= 12; m++) s += `<text x="${px(m)}" y="${H - 4}" text-anchor="middle" font-size="9" fill="#86868B">${MESES[m - 1][0]}</text>`;
+  s += lin(s25, '#D2D2D7', 2) + lin(fech, '#FF007F', 3);
+  if (ult && par) s += `<line x1="${px(ult[0])}" y1="${py(ult[1])}" x2="${px(par[0])}" y2="${py(par[1])}" stroke="#FF007F" stroke-width="1.6" stroke-dasharray="2 3" stroke-linecap="round"/>`;
+  if (ult) s += `<circle cx="${px(ult[0])}" cy="${py(ult[1])}" r="3.2" fill="#FF007F"/>`;
+  if (par) s += `<circle cx="${px(par[0])}" cy="${py(par[1])}" r="3.4" fill="#FFFFFF" stroke="#FF007F" stroke-width="1.8"/>`;
+  for (let m = 1; m <= 12; m++) {   // dica do mês
+    const a = suVal(Q, u, P.ant, m), b = v6(m); if (!isFinite(a) && !isFinite(b)) continue;
+    const t = `<b>${esc(u.nome)} · ${MESES[m - 1]}${ehP(m) ? '*' : ''}</b> · ${P.ant}: ${suPct(a)} · ${P.ano}${ehP(m) ? ` parcial até ${esc(Q.parcial_ate || '')}` : ''}: ${suPct(b)}`;
+    s += `<rect x="${(+px(m) - gw / 2).toFixed(1)}" y="0" width="${gw.toFixed(1)}" height="${H}" fill="transparent" data-tip="${esc(t)}"/>`;
+  }
+  return s + '</svg>';
+}
+function blocoShareUF() {   // um card só: Área 7 primeiro e as 5 UFs; a tabela mês x UF fica escondida na tela e sai no Excel da página
+  const Q = shareUF(); if (!Q) return '';
+  const P = suPeriodo(Q), ks = SU_ORDEM.filter(k => Q.ufs[k] && Array.isArray(Q.ufs[k].sh)), U5 = ks.filter(k => k !== 'A7');
+  const cols = SLIDE ? 6 : innerWidth <= 640 ? 2 : innerWidth <= 900 ? 3 : 6, gap = SLIDE || innerWidth > 640 ? 18 : 14;
+  const W = Math.max(120, Math.floor((larguraCard() - gap * (cols - 1)) / cols));
+  const aa = String(P.ano).slice(2), a5 = String(P.ant).slice(2), rotC = mes(P.c) + (P.cP ? '*' : '');
+  const V = Object.fromEntries(ks.map(k => [k, suVals(Q, P, Q.ufs[k])]));
+  const fUF = nomesSel('uf'), dest = fUF ? U5.filter(k => fUF.has(k)) : [];   // filtro de UF: a UF escolhida em destaque, as outras esmaecidas
+  const iC = Q.meses.indexOf(`${P.ano}${String(P.c).padStart(2, '0')}`), iP = P.mP && P.fim === P.mP && !P.cP ? Q.meses.indexOf(P.pa) : -1;
+  const mini = k => {
+    const u = Q.ufs[k], {y6, y5, d} = V[k], c = suCls(d), vC = iC >= 0 ? suNum(u.sh[iC]) : NaN, vP = iP >= 0 ? suNum(u.sh[iP]) : NaN;
+    return `<div class="su-mini${k === 'A7' ? ' a7' : ''}${dest.length && !dest.includes(k) ? ' su-off' : ''}"><div class="su-uf"><b>${k === 'A7' ? 'Área 7' : k}</b><span>${k === 'A7' ? `${U5.length} UFs` : esc(u.nome)}</span></div>
+      <div class="su-val">${suPct(y6)}</div>
+      <div class="su-dl"><span class="su-d ${c}">${c === 'up' ? '▲' : c === 'down' ? '▼' : '●'} ${suPP(d)}</span><span>${P.ant}: ${suPct(y5)}</span></div>
+      ${suMini(Q, k, W, P)}<div class="su-ult">${isFinite(vC) ? `<span>${mes(P.c)}/${aa}${P.cP ? '*' : ''} <b>${suPct(vC)}</b></span>` : ''}${isFinite(vP) ? `<span>${suRot(P.pa)}* ${suPct(vP)}</span>` : ''}</div></div>`;
+  };
+  const nq = U5.filter(k => suCls(V[k].d) === 'down').length, ng = U5.filter(k => suCls(V[k].d) === 'up').length, n = U5.length;
+  const manchete = nq ? (nq === n ? `Share cai nas ${n} UFs.` : `Share cai em ${nq} de ${n} UFs.`) : ng ? (ng === n ? `Share sobe nas ${n} UFs.` : `Share sobe em ${ng} de ${n} UFs.`) : `Share estável nas ${n} UFs.`;
+  const temP = P.mP > 0 && P.fim >= P.mP, txP = temP ? `${suRot(P.pa)}* parcial até ${Q.parcial_ate || ''}` : '';
+  const filtro = FILTROS.some(([k]) => S.f[k].size);
+  const notas = ['Share oficial de cada UF, com todas as lojas da Scanntech no estado. O share das redes, nos números abaixo, conta só as redes do Resumo por Rede Mensal que liberam o mercado e por isso dá outro número.',
+    temP ? (P.cP ? `* ${suRot(P.pa)} parcial até ${Q.parcial_ate}, dentro do acumulado: compara um mês ainda incompleto com o mês cheio de ${P.ant}.` : `* ${suRot(P.pa)} parcial até ${Q.parcial_ate}, fora do acumulado (ponto vazado na curva).`) : '',
+    filtro ? `Reckitt inteira nas ${n} UFs: o share por UF não abre por marca nem segue os filtros do site${dest.length ? '; a UF filtrada fica em destaque' : ''}.` : '',
+    !P.segue && S.corte !== P.mY ? `O share por UF fica em jan a ${mes(P.mY)}/${aa}: não segue o mês de corte do site.` : ''].filter(Boolean).join(' ');
+  const celula = x => (isFinite(x) ? nf1.format(x) + '%' : '');
+  const tot = (rot, f) => `<tr class="tot"><td class="l">${rot}</td>${ks.map(k => `<td>${f(V[k])}</td>`).join('')}</tr>`;
+  const notaXls = `Redes Scanntech · Share por UF · Scanntech Painel 2.0, Reckitt inteira por UF (não abre por marca nem segue os filtros do site) · acumulado jan a ${rotC}/${aa} contra jan a ${mes(P.c)}/${a5}${txP ? ' · ' + txP : ''}`;
+  const tabela = `<p class="eyebrow su-xls">Share por UF</p><div class="tw su-xls" data-xls-nota="${esc(notaXls)}"><table><thead><tr><th class="l">Mês</th>${ks.map(k => `<th>${k === 'A7' ? 'Área 7' : k}</th>`).join('')}</tr></thead><tbody>` +
+    Q.meses.map((am, i) => `<tr><td class="l">${suRot(am)}${am === P.pa ? '*' : ''}</td>${ks.map(k => `<td>${celula(suNum(Q.ufs[k].sh[i]))}</td>`).join('')}</tr>`).join('') +
+    tot(`Acumulado jan a ${mes(P.c)}/${a5}`, x => celula(x.y5)) + tot(`Acumulado jan a ${rotC}/${aa}`, x => celula(x.y6)) + tot(`Variação ${aa} contra ${a5}`, x => suPP(x.d)) + '</tbody></table></div>';
+  return `<div class="card shareuf"><div class="su-top"><div><p class="eyebrow">Market share por UF</p><h3>${manchete} <span>Acumulado de jan a ${rotC} de ${P.ano} contra o mesmo período de ${P.ant}.</span></h3></div>
+    <div class="legend su-leg"><span><i class="su-ln" style="background:#D2D2D7"></i>${P.ant}</span><span><i class="su-ln su-26" style="background:#FF007F"></i>${P.ano}</span></div></div>
+    <div class="su-grid">${ks.map(mini).join('')}</div>${notas ? `<p class="su-nota">${esc(notas)}</p>` : ''}<p class="su-fonte">${esc(String(Q.fonte || 'Scanntech Painel 2.0').replace(/YTD jan-[a-zç]+\*?$/, `YTD jan-${rotC}`))}</p>${tabela}</div>`;   // o período da fonte segue o do card
+}
 function pgRedesScan() {
   if (!RD) return hero('Redes Scanntech', 'Sem base de redes.', 'Gere o arquivo de dados com a base de redes.');
+  return emFonte(marcasScan() && RD.scanm ? 'scanntech_marcas' : 'scanntech', pgRedesScanFonte);
+}
+function pgRedesScanFonte() {
   const L = scanLinhas(), mer = L.filter(s => !s.so);
   // mesmas redes e mesmos meses: só os meses até o corte em que a rede vendeu nos dois anos
   let rk26 = 0, rk25 = 0, mk26 = 0, mk25 = 0;
@@ -810,7 +968,7 @@ function pgRedesScan() {
     return {s, r26, r25, vr, vm, motivo, sh: s.so || !(m26 > 0) ? NaN : r26 / m26, dsh: s.so || !(q25 > 0) || !(q26 > 0) ? NaN : (p26 / q26 - p25 / q25) * 100, tr: saiu3 ? NaN : varQ(t3, t0), v: vr, col: CRUZ[s.rede + '|' + s.uf]};
   }).filter(x => x.r26 > 0 || x.r25 > 0);
   const sel = S.ui.scsel ? itens.find(x => x.s.rede + '|' + x.s.uf === S.ui.scsel) : null;
-  let h = hero('Redes Scanntech', 'Redes de varejo.', 'Venda das lojas, mercado da rede e share da Reckitt. Clique numa rede para abrir.') + recorteTxt();
+  let h = hero('Redes Scanntech', 'Redes de varejo.', 'Venda das lojas, mercado da rede e share da Reckitt. Clique numa rede para abrir.', blocoShareUF()) + recorteTxt() + notaCorteRd();
   if (nomesSel('recorte') && !nomesSel('recorte').has('ÁREA 7')) h += '<p class="note">A Scanntech desta base cobre só a Área 7 (DF, GO, MT, MS e TO): não há redes do JC PA.</p>';
   else if (nomesSel('uf') && ![...nomesSel('uf')].some(u => ['DF', 'GO', 'MT', 'MS', 'TO'].includes(u))) h += '<p class="note">A Scanntech desta base cobre só DF, GO, MT, MS e TO: não há redes do PA.</p>';
   const semAbertura = S.f.marca.size && RD.scanm ? [...S.f.marca].map(i => dic.marca[i]).filter(m => !Object.values(RD.scanm).some(L => L.some(l => l[1] === m))) : [];
@@ -823,11 +981,11 @@ function pgRedesScan() {
   h += `<div class="grid g4">
     <div class="card kpi"><div class="lab">Reckitt nas redes ${corteTxt()}</div><div class="val">${mi(mer.reduce((a, s) => a + ytdR(s.rk, 2026), 0))}</div><div class="sub dv">${vbig(varr(rk26, rk25))}<span>mesmas redes e meses: ${mi(rk26)} contra ${mi(rk25)}</span></div></div>
     <div class="card kpi"><div class="lab">Mercado das redes</div><div class="val">${mi(mer.reduce((a, s) => a + ytdR(s.mk, 2026), 0))}</div><div class="sub dv">${vbig(varr(mk26, mk25))}<span>mesmas redes e meses, nossas categorias</span></div></div>
-    <div class="card kpi"><div class="lab">Share da Reckitt</div><div class="val">${p1(sh26)}</div><div class="sub dv">${vpp(sh26 - sh25)}<span>${p1(sh25)} em 2025</span></div></div>
+    <div class="card kpi"><div class="lab">Share da Reckitt nas redes</div><div class="val">${p1(sh26)}</div><div class="sub dv">${vpp(sh26 - sh25)}<span>${p1(sh25)} em 2025</span></div></div>
     <div class="card kpi"><div class="lab">Redes com venda</div><div class="val">${n0(itens.length)}</div><div class="sub">${mi(tudo26)} de Reckitt em 2026, incluindo as que só liberam a Reckitt</div></div></div>`;
   h += `<h2 class="sec">Quantas crescem e quantas caem. <span>Reckitt ${corteTxt()} 2026 contra 2025, por rede e UF.</span></h2>` + termometro(itens);
   if (sel) h += detalheScan(sel);
-  RD_ULT = {tipo: 'sc', itens};
+  RD_ULT = {tipo: 'sc', itens, fr: FR};
   h += `<h2 class="sec">Todas as redes. <span>Ordene pelo cabeçalho; busque pelo nome.</span></h2><div class="card"><div class="pills">${buscaRede('scbusca', S.ui.scbusca, 'Buscar rede')}</div><div id="rd-tab">${tabelaScan(itens)}</div></div>`;
   return h;
 }
@@ -836,7 +994,7 @@ function tabelaScan(itens) {
   let lista = itens.filter(x => !busca || semAcento(x.s.rede).includes(busca));
   lista = ordena(lista, 'sc', [x => x.s.rede, x => x.s.uf, x => x.r25, x => x.r26, x => x.vr, x => x.vm, x => x.sh, x => x.dsh, x => x.tr], 3);
   const mostra = S.ui.sctodas ? lista : lista.slice(0, 60);
-  return `<div class="tw"><table><thead><tr>${thSort('sc', 0, 'Rede', 'l')}${thSort('sc', 1, 'UF', 'l')}${thSort('sc', 2, 'Reckitt 25')}${thSort('sc', 3, 'Reckitt 26')}${thSort('sc', 4, 'Reckitt var.')}${thSort('sc', 5, 'Mercado var.')}${thSort('sc', 6, 'Share 26')}${thSort('sc', 7, 'Δ share')}${thSort('sc', 8, 'Últ. 3m vs 3 ant.')}<th class="l">Leitura</th><th class="l">No Colecta</th></tr></thead><tbody>` +
+  return `<div class="tw"><table><thead><tr>${thSort('sc', 0, 'Rede', 'l')}${thSort('sc', 1, 'UF', 'l')}${thSort('sc', 2, 'Reckitt 25')}${thSort('sc', 3, 'Reckitt 26')}${thSort('sc', 4, 'Reckitt var.')}${thSort('sc', 5, 'Mercado var.')}${thSort('sc', 6, 'Share 26')}${thSort('sc', 7, 'Δ share')}${thSort('sc', 8, 'Últ. 3m vs 3 ant.' + marcaParc(cR()))}<th class="l">Leitura</th><th class="l">No Colecta</th></tr></thead><tbody>` +
     (mostra.length ? '' : '<tr><td colspan="11" class="empty">Nada neste recorte.</td></tr>') + mostra.map(x => `<tr class="clk" data-act="ui" data-k="scsel" data-v="${esc(x.s.rede + '|' + x.s.uf)}"><td class="l b">${tit(x.s.rede)}</td><td class="l">${x.s.uf}</td><td>${n0(x.r25)}</td><td class="b">${n0(x.r26)}</td><td>${vc(x.vr)}</td><td>${vc(x.vm)}</td><td>${p1(x.sh)}</td><td>${isFinite(x.dsh) ? `<span class="vr ${cls(x.dsh / 100) || 'flat'}">${x.dsh > 0 ? '+' : ''}${nf1.format(x.dsh)} pp</span>` : ''}</td><td>${vc(x.tr)}</td><td class="l">${selo(leituraRede(x.vr, x.vm, x.s.so, x.motivo))}</td><td class="l">${x.col ? '<span class="tag">✓ cruzada</span>' : ''}</td></tr>`).join('') +
     `</tbody></table></div>${!S.ui.sctodas && lista.length > 60 ? `<div class="pager"><button data-act="ui" data-k="sctodas" data-v="1">Mostrar todas as ${n0(lista.length)} redes</button></div>` : ''}
     <p class="note" style="margin:12px 0 0">Reckitt R$ = mercado da rede × share da Reckitt (Scanntech, Resumo por Rede Mensal). A variação compara só os meses em que a rede vendeu nos dois anos (mesmas redes e mesmos meses); "Parou de vender" = tinha venda em 2025 e zerou em 2026. Redes que só liberam a venda da Reckitt ficam fora do mercado e do share.</p>`;
@@ -846,11 +1004,11 @@ function detalheScan(x) {
   let h = `<div class="card det"><div class="det-top"><div><p class="eyebrow">${s.uf} · Scanntech</p><h3>${tit(s.rede)}. <span>${x.motivo ? x.motivo[0] + '.' : !(x.r26 > 0) ? 'Sem venda da Reckitt em 2026.' : s.so ? 'Só libera a venda da Reckitt.' : `Share de ${p1(x.sh)} em 2026.`}</span></h3></div><button class="btn" data-act="ui" data-k="scsel" data-v="">Fechar</button></div>
     <div class="termo">${isFinite(x.vr) ? vbig(x.vr) + '<span class="sub">Reckitt 26 contra 25</span>' : ''}${!s.so && isFinite(x.vm) ? vbig(x.vm) + '<span class="sub">mercado da rede</span>' : ''}${isFinite(x.tr) ? vbig(x.tr) + '<span class="sub">últimos 3 meses contra os 3 anteriores</span>' : ''}</div>
     ${chart(a, 'rs', 250, null, true, {fv: varR})}<div class="tw"><table><thead><tr><th>Mês</th><th>Mercado 25</th><th>Mercado 26</th><th>Reckitt 25</th><th>Reckitt 26</th><th>Reckitt var.</th><th>Share 25</th><th>Share 26</th><th>Δ share</th></tr></thead><tbody>` +
-    ate(12).map(m => { const i5 = RM.indexOf(`2025${String(m).padStart(2, '0')}`), i6 = RM.indexOf(`2026${String(m).padStart(2, '0')}`), ok6 = m <= S.corte;
+    ate(12).map(m => { const i5 = RM.indexOf(`2025${String(m).padStart(2, '0')}`), i6 = RM.indexOf(`2026${String(m).padStart(2, '0')}`), ok6 = m <= fimSerie();
       const m5 = s.mk[i5], m6 = ok6 ? s.mk[i6] : 0, r5 = s.rk[i5], r6 = ok6 ? s.rk[i6] : 0, s5 = m5 ? r5 / m5 : NaN, s6 = m6 ? r6 / m6 : NaN, d = (s6 - s5) * 100;
-      return `<tr><td class="b">${MESES[m - 1]}</td><td>${n0(m5 || NaN)}</td><td class="b">${n0(m6 || NaN)}</td><td>${n0(r5 || NaN)}</td><td class="b">${n0(r6 || NaN)}</td><td>${vc(varR(r6, r5))}</td><td>${s.so ? '' : p1(s5)}</td><td>${s.so ? '' : p1(s6)}</td><td>${!s.so && isFinite(d) ? `<span class="vr ${cls(d / 100) || 'flat'}">${d > 0 ? '+' : ''}${nf1.format(d)} pp</span>` : ''}</td></tr>`; }).join('') + '</tbody></table></div>';
-  h += marcasScanDet(s.rede + '|' + s.uf);
-  h += cruzadoColecta(x.col, s.uf);
+      return `<tr><td class="b">${mesRot(m)}</td><td>${n0(m5 || NaN)}</td><td class="b">${n0(m6 || NaN)}</td><td>${n0(r5 || NaN)}</td><td class="b">${n0(r6 || NaN)}</td><td>${vcm(varR(r6, r5), m)}</td><td>${s.so ? '' : p1(s5)}</td><td>${s.so ? '' : p1(s6)}</td><td>${!s.so && isFinite(d) ? `<span class="vr ${cls(d / 100) || 'flat'}">${d > 0 ? '+' : ''}${nf1.format(d)} pp</span>` : ''}</td></tr>`; }).join('') + '</tbody></table></div>';
+  h += emFonte('scanntech_marcas', () => marcasScanDet(s.rede + '|' + s.uf));
+  h += emFonte(marcasRede() && RD.colm ? 'colecta_marcas' : 'redes_colecta', () => cruzadoColecta(x.col, s.uf));
   return h + '</div>';
 }
 function marcasScanDet(k) {
@@ -861,7 +1019,7 @@ function marcasScanDet(k) {
   const cob = RD.scancob && RD.scancob[k];
   return `<div class="cruz"><p class="eyebrow">Marcas e concorrentes na rede · Scanntech</p><h3>Onde a Reckitt ganha e onde perde espaço. <span>Share dentro de cada categoria, ${corteTxt()} 2026 contra 2025.</span></h3>` +
     (cob ? `<p class="note">A abertura por marca cobre ${p1(Math.min(cob, 1))} da Reckitt desta rede no Resumo Mensal${cob < 0.9 ? ' (falta principalmente o Vanish pó, que não vem nesta consulta)' : ''}.</p>` : '') +
-    cats.map(x => `<p class="eyebrow" style="margin-top:18px;color:var(--slate)">${esc(x.c)}</p><div class="tw"><table><thead><tr><th class="l">Marca</th><th>R$ 25</th><th>R$ 26</th><th>26 vs 25</th><th>Últ. 3m vs 3 ant.</th><th>Share 25</th><th>Share 26</th><th>Δ share</th></tr></thead><tbody>` +
+    cats.map(x => `<p class="eyebrow" style="margin-top:18px;color:var(--slate)">${esc(x.c)}</p><div class="tw"><table><thead><tr><th class="l">Marca</th><th>R$ 25</th><th>R$ 26</th><th>26 vs 25</th><th>Últ. 3m vs 3 ant.${marcaParc(cR())}</th><th>Share 25</th><th>Share 26</th><th>Δ share</th></tr></thead><tbody>` +
       x.Lc.map(l => ({l, a: ytdR(l[3], 2025), b: ytdR(l[3], 2026)})).sort((p, q) => (q.l[2] - p.l[2]) || (q.b - p.b)).map(({l, a, b}) => { const s5 = x.t25 ? a / x.t25 : NaN, s6 = x.t26 ? b / x.t26 : NaN, d = (s6 - s5) * 100;
         return `<tr><td class="l ${l[2] ? 'b ' + mkCls(l[1]) : ''}">${l[1] === 'OUTRAS' ? 'Outras marcas' : tit(l[1])}${l[2] ? ' <span class="mini">Reckitt</span>' : ''}</td><td>${n0(a || NaN)}</td><td class="${l[2] ? 'b' : ''}">${n0(b || NaN)}</td><td>${vc(varR(b, a))}</td><td>${vc(varR(...triR(l[3])))}</td><td>${p1(s5)}</td><td>${p1(s6)}</td><td>${isFinite(d) ? `<span class="vr ${cls(d / 100) || 'flat'}">${d > 0 ? '+' : ''}${nf1.format(d)} pp</span>` : ''}</td></tr>`; }).join('') + '</tbody></table></div>').join('') +
     '<p class="note" style="margin-top:10px">Fonte: Scanntech, KPIs por SKU da rede (SKUs mais vendidos, Reckitt e concorrentes). O Vanish pó não vem nesta consulta; o total da Reckitt da rede, no alto, inclui tudo.</p></div>';
@@ -876,7 +1034,7 @@ function cruzadoColecta(raizes, uf) {
   return `<div class="cruz"><p class="eyebrow">A mesma rede no Colecta · ${uf}${mk ? ' · ' + [...mk].map(m => m === 'HN' ? 'H&N' : tit(m)).join(', ') : ''}</p><h3>${rsx(r26)} comprados dos distribuidores em ${uf} ${corteTxt()}. <span>${raizes.map(nomeRaiz).map(tit).join(' · ')}</span></h3>
     <div class="termo">${r25 >= 1000 ? vbig(varQ(r26c, r25)) + '<span class="sub">26 contra 25 nos distribuidores com 2025 completo</span>' : '<span class="sub">Sem base comparável de 2025 no Colecta (distribuidor entrou depois ou 2025 incompleto)</span>'}${isFinite(varQ(...triCol(L))) ? vbig(varQ(...triCol(L))) + '<span class="sub">últimos 3 meses contra os 3 anteriores</span>' : ''}</div>
     <p class="note">${grps ? 'Distribuidores: ' + grps + '. ' : 'Sem compra pelos distribuidores nesta UF. '}${outras >= 1000 ? `A mesma empresa compra mais ${rsx(outras)} em outras UFs. ` : ''}Compra do distribuidor (Colecta) e venda ao consumidor (Scanntech) andam em ritmos diferentes: a compra concentra pedidos e a loja vende todo dia.</p>
-    ${r26 >= 1000 ? chart(serie48(tot), 'rs', 200, null, true, {semVar: true}) : ''}</div>`;
+    ${r26 >= 1000 ? chart(serie48(tot), 'rs', 200, null, true, {semVar: true, pk: FR || 'redes_colecta'}) : ''}</div>`;
 }
 
 /* ----- Redes Colecta ----- */
@@ -889,36 +1047,39 @@ function colLinhas(semMarca) {
 }
 const temBase = c => BASE_COMP.has(c.grp);
 function triFora(L) {   // distribuidores do recorte que ficam fora da tendência por não cobrirem as 6 janelas
-  const fim = RM.indexOf(`2026${String(S.corte).padStart(2, '0')}`), ini = RD.inicio_tend || RD.dist_inicio; if (fim < 5) return [];
+  const fim = RM.indexOf(`2026${String(cR()).padStart(2, '0')}`), ini = RD.inicio_tend || RD.dist_inicio; if (fim < 5) return [];
   return [...new Set(L.filter(c => (ini[c.grp] || '9') > RM[fim - 5]).map(c => tit(c.grp)))];
 }
 function triCol(L) {   // tendência só com distribuidores que já existiam nas 6 janelas
-  const fim = RM.indexOf(`2026${String(S.corte).padStart(2, '0')}`); if (fim < 5) return [NaN, NaN];
+  const fim = RM.indexOf(`2026${String(cR()).padStart(2, '0')}`); if (fim < 5) return [NaN, NaN];
   const ini = RD.inicio_tend || RD.dist_inicio;
   return triR(somaArr(L.filter(c => (ini[c.grp] || '9') <= RM[fim - 5]), 'rs'));
 }
 const EXEC_GRP = {}; if (RD) RD.col.forEach(c => { EXEC_GRP[c.grp] = c.exec; }); if (RD && RD.colm) RD.colm.forEach(c => { c.exec = EXEC_GRP[c.grp] || ''; });
 function pgRedesCol() {
   if (!RD) return hero('Redes Colecta', 'Sem base de redes.', 'Gere o arquivo de dados com a base de redes.');
+  return emFonte(marcasRede() && RD.colm ? 'colecta_marcas' : 'redes_colecta', pgRedesColFonte);
+}
+function pgRedesColFonte() {
   const L = colLinhas(), mk = marcasRede(), lojasDe = mk && mk.size > 1 ? colLinhas(true) : null;   // várias marcas: lojas da rede inteira (sem somar marca a marca)
   const por = new Map();
   L.forEach(c => { const x = por.get(c.raiz) || {raiz: c.raiz, linhas: []}; x.linhas.push(c); por.set(c.raiz, x); });
   const itens = [...por.values()].map(x => {
     const rs = somaArr(x.linhas, 'rs'), lj = somaArr(lojasDe ? lojasDe.filter(c => c.raiz === x.raiz) : x.linhas, 'lj'), base = x.linhas.filter(temBase), rb = somaArr(base, 'rs');
     const r26 = ytdR(rs, 2026), b25 = ytdR(rb, 2025), b26 = ytdR(rb, 2026), [t3, t0] = triCol(x.linhas);
-    const ult = RM.indexOf(`2026${String(S.corte).padStart(2, '0')}`);
+    const ult = RM.indexOf(`2026${String(cR()).padStart(2, '0')}`);
     return {raiz: x.raiz, linhas: x.linhas, rs, lj, r26, b26, b25, vr: varQ(b26, b25), parcial: base.length < x.linhas.length, tr: varQ(t3, t0), v: varQ(t3, t0),
       lojas: lj[ult] || 0, ufs: [...new Set(x.linhas.map(c => c.uf))].join(', '), grps: [...new Set(x.linhas.map(c => c.grp))], sc: CRUZ['r:' + x.raiz]};
   }).filter(x => x.r26 > 0 || x.b25 > 0);
   const tot = somaArr(L, 'rs'), base = somaArr(L.filter(temBase), 'rs'), r26 = ytdR(tot, 2026), b26 = ytdR(base, 2026), b25 = ytdR(base, 2025);
-  const ult = RM.indexOf(`2026${String(S.corte).padStart(2, '0')}`), lojasUlt = somaArr(lojasDe || L, 'lj')[ult] || 0;
+  const ult = RM.indexOf(`2026${String(cR()).padStart(2, '0')}`), lojasUlt = somaArr(lojasDe || L, 'lj')[ult] || 0;
   const chU = (() => { if (mk || S.f.recorte.size) return null; const ex = nomesSel('executivo'), uf = nomesSel('uf'), gr = nomesSel('grp'); const p = [];
     if (ex) { if (ex.size > 1) return null; p.push('exec:' + [...ex][0]); } if (gr) { if (gr.size > 1 || ex) return null; p.push('grp:' + [...gr][0]); } if (uf) { if (uf.size > 1) return null; p.push('uf:' + [...uf][0]); } return p.join('|'); })();
   const unicosUlt = chU !== null && RD.unicos && RD.unicos[chU] ? RD.unicos[chU][ult] || 0 : null;
   const nomeadas = itens.filter(x => x.raiz !== 'DEMAIS' && x.raiz !== 'PF').sort((a, b) => b.r26 - a.r26);
   const top20 = nomeadas.slice(0, 20).reduce((a, x) => a + x.r26, 0);
   const sel = S.ui.clsel ? itens.find(x => x.raiz === S.ui.clsel) : null;
-  let h = hero('Redes Colecta', 'Redes compradoras.', 'Clientes dos distribuidores agrupados por rede (raiz do CNPJ). Filtre executivo, UF e distribuidor no topo.') + recorteTxt();
+  let h = hero('Redes Colecta', 'Redes compradoras.', 'Clientes dos distribuidores agrupados por rede (raiz do CNPJ). Filtre executivo, UF e distribuidor no topo.') + recorteTxt() + notaCorteRd();
   if (S.f.marca.size && !RD.colm) h += '<p class="note">A abertura por marca das redes do Colecta ainda não está na base: os números são de todas as marcas.</p>';
   else if (S.f.marca.size) h += `<p class="note">Recorte por marca: ${[...S.f.marca].map(i => tit(dic.marca[i])).join(', ')}.${temHN() ? ' Sustagen, Jontex, Olla e Veet aparecem juntos como H&N nas redes.' : ''}</p>`;
   if (S.f.segmento.size) h += '<p class="note">O segmento não abre nas redes: os números são da marca inteira.</p>';
@@ -926,12 +1087,12 @@ function pgRedesCol() {
   if (S.f.uf.size) h += '<p class="note">A UF aqui é a da loja (cadastro do CNPJ), não a do distribuidor. Lojas de UFs fora da lista do filtro (BA e MA) só aparecem sem filtro de UF.</p>';
   h += `<div class="grid g4">
     <div class="card kpi"><div class="lab">Compra das redes ${corteTxt()}</div><div class="val">${mi(r26)}</div><div class="sub dv">${b25 >= 1000 ? vbig(varr(b26, b25)) + `<span>26 contra 25 na base comparável (${[...new Set(L.filter(temBase).map(c => tit(c.grp)))].join(', ')})</span>` : '<span>sem base comparável de 2025 neste recorte</span>'}</div></div>
-    <div class="card kpi"><div class="lab">Tendência</div><div class="val ${cls(varR(...triCol(L)))}">${isFinite(varR(...triCol(L))) ? pc(varR(...triCol(L))) : '·'}</div><div class="sub">${isFinite(varR(...triCol(L))) ? 'últimos 3 meses contra os 3 anteriores' + (triFora(L).length ? ' (sem ' + triFora(L).join(', ') + ', que não cobre as 6 janelas)' : '') : 'sem as 6 janelas de comparação: o distribuidor entrou depois'}</div></div>
-    <div class="card kpi"><div class="lab">Lojas compradoras em ${mes(S.corte)}</div><div class="val">${n0(unicosUlt !== null ? unicosUlt : lojasUlt)}</div><div class="sub">${unicosUlt !== null ? `CNPJs únicos; soma por distribuidor ${n0(lojasUlt)} (sobreposição ${p1(1 - unicosUlt / lojasUlt)})` : `CNPJs, soma por distribuidor${lojasDe ? ' (todas as marcas)' : ''}`}; ${n0(nomeadas.length)} redes nomeadas</div></div>
+    <div class="card kpi"><div class="lab">Tendência${marcaParc(cR())}</div><div class="val ${cls(varR(...triCol(L)))}">${isFinite(varR(...triCol(L))) ? pc(varR(...triCol(L))) : '·'}</div><div class="sub">${isFinite(varR(...triCol(L))) ? 'últimos 3 meses contra os 3 anteriores' + (triFora(L).length ? ' (sem ' + triFora(L).join(', ') + ', que não cobre as 6 janelas)' : '') : 'sem as 6 janelas de comparação: o distribuidor entrou depois'}</div></div>
+    <div class="card kpi"><div class="lab">Lojas compradoras em ${mes(cR())}${marcaParc(cR())}</div><div class="val">${n0(unicosUlt !== null ? unicosUlt : lojasUlt)}</div><div class="sub">${unicosUlt !== null ? `CNPJs únicos; soma por distribuidor ${n0(lojasUlt)} (sobreposição ${p1(1 - unicosUlt / lojasUlt)})` : `CNPJs, soma por distribuidor${lojasDe ? ' (todas as marcas)' : ''}`}; ${n0(nomeadas.length)} redes nomeadas</div></div>
     <div class="card kpi"><div class="lab">Concentração</div><div class="val">${p1(top20 / r26)}</div><div class="sub">do R$ nas 20 maiores redes</div></div></div>`;
   h += `<h2 class="sec">Quantas crescem e quantas caem. <span>Tendência dos últimos 3 meses contra os 3 anteriores, por rede.</span></h2>` + termometro(nomeadas);
   if (sel) h += detalheCol(sel);
-  RD_ULT = {tipo: 'cl', itens};
+  RD_ULT = {tipo: 'cl', itens, fr: FR};
   if (!L.length) h += '<p class="note">Nenhuma rede neste recorte: o executivo ou o distribuidor escolhido não tem distribuidor no Colecta.</p>';
   h += `<h2 class="sec">Todas as redes. <span>Ordene pelo cabeçalho; busque por nome ou cidade.</span></h2><div class="card"><div class="pills">${buscaRede('clbusca', S.ui.clbusca, 'Buscar rede ou cidade')}</div><div id="rd-tab">${tabelaCol(itens)}</div></div>`;
   return h;
@@ -942,7 +1103,7 @@ function tabelaCol(itens) {
   lista = ordena(lista, 'cl', [x => nomeRaiz(x.raiz), x => x.ufs, x => x.b25, x => x.r26, x => x.vr, x => x.tr, x => x.lojas], 3);
   lista = [...lista.filter(x => x.raiz !== 'DEMAIS' && x.raiz !== 'PF'), ...lista.filter(x => x.raiz === 'DEMAIS' || x.raiz === 'PF')];
   const mostra = S.ui.cltodas ? lista : lista.slice(0, 80);
-  return `<div class="tw"><table><thead><tr>${thSort('cl', 0, 'Rede', 'l')}${thSort('cl', 1, 'UF', 'l')}<th class="l">Distribuidor</th>${thSort('cl', 2, 'R$ 25 (base)')}${thSort('cl', 3, 'R$ 26')}${thSort('cl', 4, '26 vs 25')}${thSort('cl', 5, 'Últ. 3m vs 3 ant.')}${thSort('cl', 6, `Lojas ${mes(S.corte)}`)}<th class="l">Na Scanntech</th></tr></thead><tbody>` +
+  return `<div class="tw"><table><thead><tr>${thSort('cl', 0, 'Rede', 'l')}${thSort('cl', 1, 'UF', 'l')}<th class="l">Distribuidor</th>${thSort('cl', 2, 'R$ 25 (base)')}${thSort('cl', 3, 'R$ 26')}${thSort('cl', 4, '26 vs 25')}${thSort('cl', 5, 'Últ. 3m vs 3 ant.' + marcaParc(cR()))}${thSort('cl', 6, `Lojas ${mes(cR())}${marcaParc(cR())}`)}<th class="l">Na Scanntech</th></tr></thead><tbody>` +
     (mostra.length ? '' : '<tr><td colspan="9" class="empty">Nada neste recorte.</td></tr>') + mostra.map(x => { const n = RD.nomes[x.raiz] || {}; return `<tr class="clk" data-act="ui" data-k="clsel" data-v="${x.raiz}"><td class="l b">${tit(nomeRaiz(x.raiz))}${n.municipio ? `<div class="mini">${esc(n.municipio)}</div>` : ''}</td><td class="l">${x.ufs}</td><td class="l">${x.grps.map(tit).join(', ')}</td><td>${n0(x.b25 || NaN)}</td><td class="b">${n0(x.r26)}</td><td>${vc(x.vr)}${x.parcial && isFinite(x.vr) ? '<span class="mini"> base parcial</span>' : ''}</td><td>${vc(x.tr)}</td><td>${n0(x.lojas || NaN)}</td><td class="l">${x.sc ? `<span class="tag">✓ ${x.sc.map(k => tit(k.split('|')[0])).filter((v, i, a) => a.indexOf(v) === i).join(', ')}</span>` : ''}</td></tr>`; }).join('') +
     `</tbody></table></div>${!S.ui.cltodas && lista.length > 80 ? `<div class="pager"><button data-act="ui" data-k="cltodas" data-v="1">Mostrar todas as ${n0(lista.length)} redes</button></div>` : ''}
     <p class="note" style="margin:12px 0 0">Rede = raiz do CNPJ (8 dígitos); nome pela Receita. As 1.000 maiores redes aparecem nomeadas; o resto está em "Demais clientes". 26 contra 25 só nos distribuidores com 2025 completo no Colecta (${[...BASE_COMP].map(tit).join(', ')}) (acumulado, mês sem compra conta como zero). Os distribuidores que entraram no Colecta depois de jan/25 ou têm 2025 incompleto ficam fora dessa conta: para eles vale a tendência dos últimos 3 meses. Lojas = soma de CNPJs por distribuidor.</p>`;
@@ -954,30 +1115,36 @@ function detalheCol(x) {
   let h = `<div class="card det"><div class="det-top"><div><p class="eyebrow">${x.ufs} · Colecta</p><h3>${tit(nomeRaiz(x.raiz))}. <span>${n.razao ? tit(n.razao) : ''}${n.municipio ? ' · ' + esc(n.municipio) + '/' + (n.uf || '') : ''}${x.raiz.length === 8 ? ' · raiz ' + x.raiz : ''}</span></h3></div><button class="btn" data-act="ui" data-k="clsel" data-v="">Fechar</button></div>
     <div class="termo">${isFinite(x.vr) ? vbig(x.vr) + '<span class="sub">26 contra 25 na base comparável</span>' : '<span class="sub">Sem base comparável de 2025 no Colecta</span>'}${isFinite(x.tr) ? vbig(x.tr) + '<span class="sub">últimos 3 meses contra os 3 anteriores</span>' : ''}</div>
     ${chart(serie48(x.rs), 'rs', 250, null, true, {fv: varR, semVar: x.parcial})}<div class="tw"><table><thead><tr><th>Mês</th><th>R$ 25</th><th>R$ 26</th><th>Var. (base comparável)</th><th>Lojas 25</th><th>Lojas 26</th></tr></thead><tbody>` +
-    ate(12).map(m => { const i5 = RM.indexOf(`2025${String(m).padStart(2, '0')}`), i6 = RM.indexOf(`2026${String(m).padStart(2, '0')}`), ok6 = m <= S.corte;
-      const a5 = x.rs[i5], a6 = ok6 ? x.rs[i6] : 0; return `<tr><td class="b">${MESES[m - 1]}</td><td>${n0(a5 || NaN)}</td><td class="b">${n0(a6 || NaN)}</td><td>${vc(varR(ok6 ? rb[i6] : 0, rb[i5]))}</td><td>${n0(x.lj[i5] || NaN)}</td><td class="b">${n0(ok6 ? x.lj[i6] || NaN : NaN)}</td></tr>`; }).join('') + '</tbody></table></div>' +
+    ate(12).map(m => { const i5 = RM.indexOf(`2025${String(m).padStart(2, '0')}`), i6 = RM.indexOf(`2026${String(m).padStart(2, '0')}`), ok6 = m <= fimSerie();
+      const a5 = x.rs[i5], a6 = ok6 ? x.rs[i6] : 0; return `<tr><td class="b">${mesRot(m)}</td><td>${n0(a5 || NaN)}</td><td class="b">${n0(a6 || NaN)}</td><td>${vcm(varR(ok6 ? rb[i6] : 0, rb[i5]), m)}</td><td>${n0(x.lj[i5] || NaN)}</td><td class="b">${n0(ok6 ? x.lj[i6] || NaN : NaN)}</td></tr>`; }).join('') + '</tbody></table></div>' +
     `<p class="eyebrow" style="margin-top:22px">Por distribuidor</p><div class="tw"><table><thead><tr><th class="l">Distribuidor</th><th>R$ 25</th><th>R$ 26</th><th>26 vs 25</th><th>Últ. 3m vs 3 ant.</th></tr></thead><tbody>` +
     porG.map(p => `<tr><td class="l b">${tit(p.g)}</td><td>${n0(p.r25)}</td><td class="b">${n0(p.r26)}</td><td>${vc(p.vr)}</td><td>${vc(p.tr)}</td></tr>`).join('') + '</tbody></table></div><p class="note" style="margin-top:8px">Lojas = soma de CNPJs por distribuidor. 26 contra 25 só nos distribuidores com 2025 completo no Colecta (acumulado; mês sem compra conta como zero).</p>';
-  if (RD.colm) {
-    const uf = nomesSel('uf'), gr = nomesSel('grp'), ex = nomesSel('executivo'), rc = nomesSel('recorte');
-    const Lm = RD.colm.filter(c => c.raiz === x.raiz && (!uf || uf.has(c.uf)) && (!gr || gr.has(c.grp)) && (!ex || ex.has(c.exec || '')) && (!rc || rc.has(recorteGrp(c.grp))));
-    const ult = RM.indexOf(`2026${String(S.corte).padStart(2, '0')}`);
-    const pm = ['VEJA', 'VANISH', 'FINISH', 'HARPIC', 'HN'].map(m => { const L = Lm.filter(c => c.marca === m); if (!L.length) return null; const rs = somaArr(L, 'rs'), base = somaArr(L.filter(temBase), 'rs');
-      return {m, r26: ytdR(rs, 2026), b25: ytdR(base, 2025), vb: varQ(ytdR(base, 2026), ytdR(base, 2025)), tr: varQ(...triCol(L)), lj: somaArr(L, 'lj')[ult] || 0}; }).filter(Boolean);
-    const t26 = pm.reduce((a, p) => a + p.r26, 0);
-    if (pm.length) h += `<p class="eyebrow" style="margin-top:22px">Marcas na rede</p><div class="tw"><table><thead><tr><th class="l">Marca</th><th>R$ 25 (base)</th><th>R$ 26</th><th>26 vs 25</th><th>Últ. 3m vs 3 ant.</th><th>Peso 26</th><th>Lojas em ${mes(S.corte)}</th></tr></thead><tbody>` +
-      pm.sort((a, b) => b.r26 - a.r26).map(p => `<tr><td class="l b ${mkCls(p.m)}">${p.m === 'HN' ? 'H&N' : tit(p.m)}</td><td>${n0(p.b25 || NaN)}</td><td class="b">${n0(p.r26)}</td><td>${vc(p.vb)}</td><td>${vc(p.tr)}</td><td>${p1(p.r26 / t26)}</td><td>${n0(p.lj || NaN)}</td></tr>`).join('') + '</tbody></table></div>';
-  }
-  if (x.sc) h += x.sc.map(k => { const s = RD.scan.find(z => z.rede + '|' + z.uf === k); if (!s) return ''; const r26 = ytdR(s.rk, 2026), m26 = ytdR(s.mk, 2026), [p26, p25] = parR(s.rk, s.so ? s.rk : s.mk), [q26, q25] = parR(s.mk);
-    const r25 = p25, m25 = q25;
-    return `<div class="cruz"><p class="eyebrow">A mesma rede na Scanntech · ${s.uf}${S.f.marca.size ? ' · Reckitt inteira' : ''}</p><h3>${tit(s.rede)}: ${mi(r26)} de Reckitt vendidos nas lojas ${corteTxt()}. <span>${s.so ? 'Só libera a Reckitt.' : 'Share de ' + p1(r26 / m26) + '.'}</span></h3>
-      <div class="termo">${isFinite(varQ(p26, p25)) ? vbig(varQ(p26, p25)) + '<span class="sub">Reckitt nas lojas, 26 contra 25 (mesmos meses)</span>' : ''}${!s.so && isFinite(varR(q26, q25)) ? vbig(varR(q26, q25)) + '<span class="sub">mercado da rede</span>' : ''}</div>${chart(serie48(s.rk), 'rs', 200, null, true, {fv: varR})}</div>`; }).join('');
+  if (RD.colm) h += emFonte('colecta_marcas', () => marcasColDet(x));
+  if (x.sc) h += emFonte('scanntech', () => scanCruzDet(x));
   else h += '<p class="note" style="margin-top:16px">Esta rede não foi encontrada na Scanntech (a loja pode não ter leitura de caixa na Scanntech ou ter outro nome de rede).</p>';
   return h + '</div>';
 }
+function marcasColDet(x) {   // marcas da rede no Colecta (abertura por marca, no corte dela)
+  let h = '';
+  const uf = nomesSel('uf'), gr = nomesSel('grp'), ex = nomesSel('executivo'), rc = nomesSel('recorte');
+  const Lm = RD.colm.filter(c => c.raiz === x.raiz && (!uf || uf.has(c.uf)) && (!gr || gr.has(c.grp)) && (!ex || ex.has(c.exec || '')) && (!rc || rc.has(recorteGrp(c.grp))));
+  const ult = RM.indexOf(`2026${String(cR()).padStart(2, '0')}`);
+  const pm = ['VEJA', 'VANISH', 'FINISH', 'HARPIC', 'HN'].map(m => { const L = Lm.filter(c => c.marca === m); if (!L.length) return null; const rs = somaArr(L, 'rs'), base = somaArr(L.filter(temBase), 'rs');
+    return {m, r26: ytdR(rs, 2026), b25: ytdR(base, 2025), vb: varQ(ytdR(base, 2026), ytdR(base, 2025)), tr: varQ(...triCol(L)), lj: somaArr(L, 'lj')[ult] || 0}; }).filter(Boolean);
+  const t26 = pm.reduce((a, p) => a + p.r26, 0);
+  if (pm.length) h += `<p class="eyebrow" style="margin-top:22px">Marcas na rede</p><div class="tw"><table><thead><tr><th class="l">Marca</th><th>R$ 25 (base)</th><th>R$ 26</th><th>26 vs 25</th><th>Últ. 3m vs 3 ant.${marcaParc(cR())}</th><th>Peso 26</th><th>Lojas em ${mes(cR())}${marcaParc(cR())}</th></tr></thead><tbody>` +
+    pm.sort((a, b) => b.r26 - a.r26).map(p => `<tr><td class="l b ${mkCls(p.m)}">${p.m === 'HN' ? 'H&N' : tit(p.m)}</td><td>${n0(p.b25 || NaN)}</td><td class="b">${n0(p.r26)}</td><td>${vc(p.vb)}</td><td>${vc(p.tr)}</td><td>${p1(p.r26 / t26)}</td><td>${n0(p.lj || NaN)}</td></tr>`).join('') + '</tbody></table></div>';
+  return h;
+}
+function scanCruzDet(x) {   // a mesma rede na Scanntech (Resumo Mensal, no corte dele)
+  return x.sc.map(k => { const s = RD.scan.find(z => z.rede + '|' + z.uf === k); if (!s) return ''; const r26 = ytdR(s.rk, 2026), m26 = ytdR(s.mk, 2026), [p26, p25] = parR(s.rk, s.so ? s.rk : s.mk), [q26, q25] = parR(s.mk);
+    const r25 = p25, m25 = q25;
+    return `<div class="cruz"><p class="eyebrow">A mesma rede na Scanntech · ${s.uf}${S.f.marca.size ? ' · Reckitt inteira' : ''}</p><h3>${tit(s.rede)}: ${mi(r26)} de Reckitt vendidos nas lojas ${corteTxt()}. <span>${s.so ? 'Só libera a Reckitt.' : 'Share de ' + p1(r26 / m26) + '.'}</span></h3>
+      <div class="termo">${isFinite(varQ(p26, p25)) ? vbig(varQ(p26, p25)) + '<span class="sub">Reckitt nas lojas, 26 contra 25 (mesmos meses)</span>' : ''}${!s.so && isFinite(varR(q26, q25)) ? vbig(varR(q26, q25)) + '<span class="sub">mercado da rede</span>' : ''}</div>${chart(serie48(s.rk), 'rs', 200, null, true, {fv: varR, pk: 'scanntech'})}</div>`; }).join('');
+}
 
 function pgDepara() {
-  return hero('De-para', 'Distribuidores, fontes e segmentos.', 'Hierarquia do CTO, regra de fonte por período e a régua única entre MTRIX e Colecta.') +
+  return hero('De-para', 'Distribuidores, fontes e segmentos.', 'Hierarquia do CTO, regra de fonte por período e a régua única entre MTRIX e Colecta.') + tabelaFontes() +
     `<div class="card"><p class="eyebrow">Hierarquia e fonte</p><div class="tw"><table><thead><tr><th class="l">Grp. econômico</th><th class="l">UF</th><th class="l">Canal</th><th class="l">Executivo de vendas</th>
     <th class="l">Fonte 2023-2024</th><th class="l">Fonte 2025</th><th class="l">Fonte 2026</th><th class="l">Série emendada</th><th class="l">Mesma régua</th></tr></thead><tbody>` +
     D.depara.map(d => `<tr><td class="l b">${tit(d.grp)}</td><td class="l">${d.uf}</td><td class="l">${tit(d.canal)}</td><td class="l">${esc(d.executivo)}</td><td class="l">${esc(d.f2324)}</td><td class="l">${esc(d.f25)}</td><td class="l">${esc(d.f26)}</td><td class="l">${d.emendada}</td><td class="l">${d.regua}</td></tr>`).join('') +
@@ -985,6 +1152,13 @@ function pgDepara() {
     D.regua.map(x => `<tr><td class="l b ${mkCls(x.marca)}">${tit(x.marca)}</td><td class="l">${tit(x.segmento)}</td><td class="l">${esc(x.mtrix)}</td><td class="l">${esc(x.colecta)}</td></tr>`).join('') + '</tbody></table></div></div>';
 }
 
+function tabelaFontes() {
+  const L = (DSO.atualizacao || {}).fontes || []; if (!L.length) return '';
+  const sit = f => ({ok: ['Em dia', 'up'], parc: [`Em dia, ${f.ate_txt} parcial`, 'parc'], warn: [faltaFonte(f), 'warn'], flat: ['Encerrada', 'flat']})[estadoFonte(f)];
+  return `<div class="card"><p class="eyebrow">Data de cada fonte</p><div class="tw"><table><thead><tr><th class="l">Fonte</th><th class="l">Extraída em</th><th class="l">Dado até</th><th class="l">Último mês fechado</th><th class="l">Situação</th><th class="l">O que é</th></tr></thead><tbody>` +
+    L.map(f => `<tr><td class="l b">${esc(f.nome)}</td><td class="l">${esc(f.extraido ? f.extraido + (f.hora ? ' ' + f.hora : '') : '-')}</td><td class="l">${esc(f.ate_dia + (f.parcial ? ` (${f.ate_txt} parcial)` : ''))}</td><td class="l">${esc(f.fechado_txt || f.ate_txt)}</td><td class="l">${selo(sit(f))}</td><td class="l txt">${esc(f.obs || '')}</td></tr>`).join('') +
+    `</tbody></table></div><p class="note" style="margin:12px 0 0">Site publicado em ${esc(DSO.gerado)}. A data de publicação muda a cada republicação do site; a data que vale para o número é a da extração de cada fonte. A régua de em dia compara o último mês fechado: a partir do dia 8, o site precisa ter o mês anterior fechado.</p></div>`;
+}
 function linhasBase() {
   const nv = MODO === 'si' ? 'SEGMENTO' : (S.ui.bnv || 'TOTAL'), mk = gMarcas(), sg = gSegs();
   return BASE.filter(r => (nv === 'TODOS' || r[COL.nivel] === NIV[nv === 'SEGMENTO' ? 'SEG' : nv]) && (!mk || mk.has(r[COL.marca]) || r[COL.marca] === TODAS) && (!sg || sg.has(r[COL.segmento]) || r[COL.segmento] === TODOS));
@@ -1044,7 +1218,7 @@ function spark(a, pa) {
   const py = x => (H - 3 - Math.max(0, x) / mx * (H - 6)).toFixed(1);
   const linha = (pts, cor, extra = '') => (pts.length > 1 ? `<polyline points="${pts.map(([m, x]) => px(m).toFixed(1) + ',' + py(x)).join(' ')}" fill="none" stroke="${cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" ${extra}/>` : '');
   const p25 = [], p26 = [], pp = [];
-  for (let m = 1; m <= 12; m++) { const x = v(a, 2025, m), y = v(a, 2026, m); if (isFinite(x)) p25.push([m, x]); if (isFinite(y)) p26.push([m, y]); }
+  for (let m = 1; m <= 12; m++) { const x = v(a, 2025, m), y = v(a, 2026, m); if (isFinite(x)) p25.push([m, x]); if (isFinite(y) && !ehParcial(m)) p26.push([m, y]); }
   if (pa) {
     Q4M.forEach(m => { const x = v(pa, 2026, m); if (x > 0) pp.push([m, x]); });
     const ult = p26[p26.length - 1]; if (pp.length && ult && ult[0] === pp[0][0] - 1) pp.unshift(ult);
@@ -1070,7 +1244,7 @@ function tabelaCurvas(t, rotulo, L, nomeFn, extraFn) {
   const cols = [x => semAcento(nomeFn(x.k)), x => x.r25, x => x.r26, x => x.d, x => x.dr, x => x.t3a, x => x.t3, x => x.c26, x => x.dc, x => x.nc, x => x.dnc, x => x.pl, x => x.dpl];
   ordena(L, t, cols, 2);
   const comPl = L.some(x => x.pl > 0), sel = String(S.ui['sel' + t] ?? '');
-  const u = S.corte, tri = u >= 3 ? `${mes(u - 2)} a ${mes(u)}` : 'últimos meses';
+  const u = S.corte, tri = u >= 3 ? `${mes(u - 2)} a ${mes(u)}${marcaParc(u)}` : 'últimos meses';
   const soma = f => L.reduce((s, x) => s + (isFinite(f(x)) ? f(x) : 0), 0);
   const T0 = {r25: soma(x => x.r25), r26: soma(x => x.r26), c25: soma(x => x.c25), c26: soma(x => x.c26), pl: soma(x => x.pl), q425: soma(x => x.q425)};
   const linha = (x, tot) => `<tr class="${tot ? 'tot' : String(x.k) === sel ? 'on' : ''}"><td class="l b">${tot ? 'Total' : `<button class="lnk" data-act="ui" data-k="sel${t}" data-v="${String(x.k) === sel ? '' : x.k}">${nomeFn(x.k)}</button>`}</td>` +
@@ -1345,7 +1519,10 @@ function pgSiRV() {
 const abasMarcas = pg => { const si = MODO === 'si' ? 'si-' : ''; return `<div class="pills" style="margin:0 0 18px">${[['geral', 'Total'], ['veja', 'Veja'], ['vanish', 'Vanish'], ['harpic', 'Harpic'], ['finish', 'Finish'], ['hn', 'H&N']].map(([p, n]) => `<button data-act="pg" data-pg="${si + p}" class="${si + p === pg ? 'on' : ''}">${n}</button>`).join('')}</div>`; };
 const comAbasMarca = (html, pg) => { const i = html.indexOf('</section>'); return i < 0 ? abasMarcas(pg) + html : html.slice(0, i + 10) + abasMarcas(pg) + html.slice(i + 10); };
 const abasClientesSO = pg => `<div class="pills" style="margin:0 0 18px">${[['clientes', 'Distribuidores'], ['redes-col', 'Redes Colecta'], ['redes-scan', 'Redes Scanntech']].map(([p, n]) => `<button data-act="pg" data-pg="${p}" class="${p === pg ? 'on' : ''}">${n}</button>`).join('')}</div>`;
-const comAbas = (html, pg) => { const i = html.indexOf('</section>'); return i < 0 ? abasClientesSO(pg) + html : html.slice(0, i + 10) + abasClientesSO(pg) + html.slice(i + 10); };
+const comAbas = (html, pg) => {
+  const j = !SLIDE && innerWidth <= 640 ? html.indexOf('<div class="card shareuf"') : -1;   // celular: as abas vêm antes do market share por UF, que é alto
+  if (j >= 0) return html.slice(0, j) + abasClientesSO(pg) + html.slice(j);
+  const i = html.indexOf('</section>'); return i < 0 ? abasClientesSO(pg) + html : html.slice(0, i + 10) + abasClientesSO(pg) + html.slice(i + 10); };
 function pgSoCurvas(t, col, rot, plural, nomeFn, extraFn, sub) {
   const op = {marcas: gMarcas(), segs: gSegs()}, L = curvasDados(r => r[col], op);
   let h = `<h2 class="sec">Quantas crescem e quantas caem. <span>Sell out de ${corteTxt()}, 2026 contra 2025, por ${rot.toLowerCase()}.</span></h2>` + termometro(L.map(x => ({v: x.d})));
@@ -1514,11 +1691,13 @@ function tabelaParaLinhas(tb) {   // respeita colspan e rowspan; qualificadores 
 const PAGINAS = {};   // preenchido junto do render
 const paginaHTML = () => (PAGINAS[S.page] || (() => comAbasMarca(pgMarca(S.page), S.page)))();
 function linhasRecorte() {
-  const L = [['Perna', T('Sell Out', 'Sell In')], ['Página', PAGES.find(p => p[0] === S.page)[1]], ['Mês de corte', `${mes(S.corte)}/26 (acumulado de ${corteTxt()})`]];
+  const L = [['Perna', T('Sell Out', 'Sell In')], ['Página', PAGES.find(p => p[0] === S.page)[1]], ['Mês de corte', ehParcial(S.corte, 2026, 'base') ? `${corteRot()}, acumulado de ${corteTxt()}` : `${mes(S.corte)}/26 (acumulado de ${PARC_PG[S.page] ? emFonte(PARC_PG[S.page], corteTxt) : corteTxt()})`]];
+  if (notaParcial()) L.push(['Mês parcial', notaParcial()]);
   FILTROS.forEach(([k, n]) => L.push([n, S.f[k].size ? [...S.f[k]].map(i => dic[k][i]).join(', ') : 'Todos']));
   const busca = {'redes-scan': S.ui.scbusca, 'redes-col': S.ui.clbusca, confronto: S.ui.cbusca}[S.page];
   if (busca) L.push(['Busca na tabela', busca]);
-  L.push(['Base atualizada em', D.gerado]);
+  L.push([MODO === 'so' && fontesDaPagina().length ? 'Site publicado em' : 'Base atualizada em', D.gerado]);
+  if (MODO === 'so') fontesDaPagina().forEach(f => L.push([`Fonte ${f.nome}`, `${quandoFonte(f)}${f.hora ? ' (extração às ' + f.hora + ')' : ''}${f.obs ? '. ' + f.obs : ''}`]));
   if (MODO === 'si') {
     const bus = S.f.uf.size ? [...S.f.uf].map(i => dic.uf[i]).join(', ') : 'Hygiene, Health e Nutrition';
     L.push(['Order Management', omData()], ['Plano do Q4', S.page === 'si-q4' ? 'AR oficial de 29/09, só Hygiene (base da régua do Q4)' : `AR oficial de 29/09 das BUs do recorte (${bus}); a página Plano Q4 usa só Hygiene`]);
@@ -1535,7 +1714,7 @@ async function exportarExcel(btn) {
     try { div.innerHTML = paginaHTML(); } finally { Object.keys(S.ui).forEach(k => delete S.ui[k]); Object.assign(S.ui, JSON.parse(ui0)); }
     const nomePg = PAGES.find(p => p[0] === S.page)[1], busca = {'redes-scan': S.ui.scbusca, 'redes-col': S.ui.clbusca, confronto: S.ui.cbusca}[S.page];
     const resumo = [...FILTROS.filter(([k]) => S.f[k].size).map(([k, n]) => `${n}: ${[...S.f[k]].map(i => dic[k][i]).join(', ')}`), ...(busca ? [`Busca: ${busca}`] : [])].join(' · ') || 'Sem recorte';
-    const nota = `${T('Sell Out', 'Sell In')} · ${nomePg} · corte ${mes(S.corte)}/26 · ${resumo}`;
+    const nota = `${T('Sell Out', 'Sell In')} · ${nomePg} · corte ${corteRot()} · ${resumo}`;
     const abas = [{nome: 'Recorte', titulo: `Governança CTO · ${T('Sell Out', 'Sell In')} · ${nomePg}`, nota: 'Recorte marcado no site no momento da exportação.', cab: [['Item', 'Valor']], linhas: linhasRecorte()}];
     if (S.page === 'base' || S.page === 'si-base') {
       const B = linhasBase();
@@ -1549,7 +1728,8 @@ async function exportarExcel(btn) {
         const eb = ebs[ebs.length - 1], te = eb ? eb.textContent.trim() : '';
         const nome = te && !/^\d+$/.test(te) ? te : h2;
         const {cab, linhas} = tabelaParaLinhas(el);
-        if (linhas.length) abas.push({nome, titulo: nome, nota: h2sub ? `${nota} · ${h2sub}` : nota, cab, linhas});
+        const nx = el.closest('[data-xls-nota]');   // tabela com recorte próprio (share por UF: Reckitt inteira, sem os filtros do site)
+        if (linhas.length) abas.push({nome, titulo: nome, nota: nx ? nx.getAttribute('data-xls-nota') : h2sub ? `${nota} · ${h2sub}` : nota, cab, linhas});
       });
     }
     if (abas.length === 1) abas[0].linhas.push(['Observação', 'Esta página não tem tabela; o recorte segue registrado acima.']);
@@ -1614,9 +1794,9 @@ function recorteSlide() {   // o resumo já sai escapado (tit); soma a busca dig
 }
 function moldeSlide(nomePg, titulo, sub) {
   const s = document.createElement('div'); s.className = 'slide';
-  s.innerHTML = `<div class="s-top"><img src="assets/reckitt_logo.png" alt="Reckitt"><b>Governança CTO</b><span>${T('Sell Out', 'Sell In')} · ${esc(nomePg)}</span><span class="s-rec">${recorteSlide()} · corte ${mes(S.corte)}/26</span></div>
+  s.innerHTML = `<div class="s-top"><img src="assets/reckitt_logo.png" alt="Reckitt"><b>Governança CTO</b><span>${T('Sell Out', 'Sell In')} · ${esc(nomePg)}</span><span class="s-rec">${recorteSlide()} · corte ${esc(corteRot())}</span></div>
     ${titulo ? `<div class="s-tit"><h2>${esc(titulo)}. <span>${esc(sub)}</span></h2></div>` : ''}<div class="s-corpo"><div class="s-escala"></div></div>
-    <div class="s-pe"><span>Atualizado em ${esc(D.gerado.split(' ')[0])}${MODO === 'si' && D.om ? ` · pedidos de ${omData()}` : ''} · uso interno</span><span class="s-num"></span></div>`;
+    <div class="s-pe"><span>${MODO === 'so' && fontesDaPagina().length ? esc(fontesDaPagina().filter(f => !f.congelada).map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : `Atualizado em ${esc(D.gerado.split(' ')[0])}`}${MODO === 'si' && D.om ? ` · pedidos de ${omData()}` : ''} · uso interno</span><span class="s-num"></span></div>`;
   return s;
 }
 function encaixar(s) {   // mede, aplica a escala e mede de novo (gráfico e tabela mudam de altura quando a largura muda)
@@ -1642,7 +1822,9 @@ function montarSlides() {
   const sc = moldeSlide(nomePg, '', ''); sc.classList.add('capa');
   const h1 = capa ? capa.querySelector('h1') : null;
   sc.querySelector('.s-escala').innerHTML = `<p class="eyebrow">${esc(T('Sell Out', 'Sell In'))} · ${esc(nomePg)}</p><h1 class="s-h1">${h1 ? h1.innerHTML : esc(nomePg)}</h1>
-    <p class="s-sub">${recorteSlide()} · acumulado de ${corteTxt()}/26</p>`;
+    <p class="s-sub">${recorteSlide()} · acumulado de jan a ${esc(corteRot())}</p>`;
+  const su = capa ? capa.querySelector('.shareuf') : null;   // market share por UF (Redes Scanntech): fica no título, então vai para a capa; a tabela escondida é só do Excel
+  if (su) { su.querySelectorAll('.su-xls').forEach(x => x.remove()); const b = limparParaSlide(su); if (b) sc.querySelector('.s-escala').appendChild(b); }
   const prim = grupos.length && !grupos[0].titulo ? grupos.shift() : null;
   if (prim) prim.nos.forEach(n => { const b = limparParaSlide(n); if (b) sc.querySelector('.s-escala').appendChild(b); });
   caixa.appendChild(sc); slides.push(sc); encaixar(sc);
@@ -1741,7 +1923,7 @@ function render(topo = true) {
   ['scbusca', 'clbusca'].forEach(idb => {   // busca das redes: redesenha só a tabela
     const inp = document.getElementById(idb); if (!inp) return;
     let tB = null;
-    const aplica = () => { clearTimeout(tB); tB = setTimeout(() => { S.ui[idb] = inp.value; const box = document.getElementById('rd-tab'); if (box && RD_ULT) box.innerHTML = RD_ULT.tipo === 'sc' ? tabelaScan(RD_ULT.itens) : tabelaCol(RD_ULT.itens); }, 150); };
+    const aplica = () => { clearTimeout(tB); tB = setTimeout(() => { S.ui[idb] = inp.value; const box = document.getElementById('rd-tab'); if (box && RD_ULT) box.innerHTML = emFonte(RD_ULT.fr || null, () => (RD_ULT.tipo === 'sc' ? tabelaScan(RD_ULT.itens) : tabelaCol(RD_ULT.itens))); }, 150); };
     inp.addEventListener('input', e => { if (!e.isComposing) aplica(); });
     inp.addEventListener('compositionend', aplica);
   });
