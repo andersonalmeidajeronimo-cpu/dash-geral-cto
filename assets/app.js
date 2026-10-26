@@ -1,15 +1,17 @@
-/* Governança CTO · site com três pernas: Sell Out (Dash Geral, mesma lógica do DASH_GERAL_CTO_POWERQUERY.xlsx), Sell In (P&L Restated + Order Management)
-   MSL Direto (MSL das lojas das contas de atendimento direto, Power BI Execution Report) e MSL Indireto (MSL das lojas do canal indireto, recalculado no Colecta).
+/* Governança CTO · site com cinco pernas: Sell Out (Dash Geral, mesma lógica do DASH_GERAL_CTO_POWERQUERY.xlsx), Sell In (P&L Restated + Order Management),
+   MSL Direto (MSL das lojas das contas de atendimento direto, Power BI Execution Report), MSL Indireto (MSL das lojas do canal indireto, recalculado no Colecta)
+   e Nielsen (mercado e share da Reckitt nas categorias Nielsen e IQVIA, base mensal do CMI).
    Sell Out: R$ e caixas somam o nível SEGMENTO; PDV vem do TOTAL, da MARCA ou do SEGMENTO conforme o recorte (sem soma dupla no total).
    Sell In: mesmo formato de linha; R$ = NR, caixas = VOL do P&L, sem positivação.
    MSL Direto: base própria (mês x loja x SKU com Target e Compliance); MSL = soma do Compliance / soma do Target, lido em janela de 3 meses. */
 (() => {
 const DSO = window.DASH, DSI = window.DASH.sellin || null;
 const DEX = (() => { try { return montarDEX(window.DASH.execucao); } catch (e) { console.warn('MSL Direto fora do site: base fora do formato.', e); return null; } })();
+const DNI = (() => { try { return montarDNI(window.DASH.nielsen); } catch (e) { console.warn('Nielsen fora do site: base fora do formato.', e); return null; } })();   // perna Nielsen: base própria (cubo de mercado), só existe quando o arquivo cifrado traz a base
 const DMI = (() => { try { return montarDMI(window.DASH.msl_indireto); } catch (e) { console.warn('MSL Indireto fora do site: base fora do formato.', e); return null; } })();   // perna MSL Indireto: mesma regra, base própria (lojas do canal indireto)   // perna MSL Direto: só existe quando o arquivo cifrado traz a base de MSL; base quebrada não derruba as outras pernas
 let MODO = 'so', D = DSO;
 const T = (so, si) => (MODO === 'si' ? si : so);   // texto conforme a perna
-const PERNA = () => ({si: 'Sell In', ex: 'MSL Direto', mi: 'MSL Indireto'}[MODO] || 'Sell Out');
+const PERNA = () => ({si: 'Sell In', ex: 'MSL Direto', mi: 'MSL Indireto', ni: 'Nielsen'}[MODO] || 'Sell Out');
 const EXM = () => MODO === 'ex' || MODO === 'mi';   // as duas pernas de MSL usam o mesmo motor (Target e Compliance)
 const COL = {recorte:2, uf:3, grp:4, executivo:5, canal:6, fonte:7, janela:8, nivel:9, marca:10, segmento:11};
 const RS = 12, CX = 13, PDV = 14, ANO0 = 2023;
@@ -26,6 +28,8 @@ const FILTROS_SI = [['grp','Cliente'],['recorte','Cliente (L4)'],['executivo','E
 const FILTROS_EX = [['bandeira','Cliente'],['executivo','Executivo'],['uf','UF'],['canal','Canal'],['ambiente','Ambiente'],['marca','Marca'],['segmento','Segmento']];
 const FILTROS_MI = [['dist','Distribuidor'],['rede','Rede'],['executivo','Executivo'],['perfil','Perfil da loja'],['tipo','Tipo de loja'],['lista','Lista'],['marca','Marca'],['segmento','Segmento']];
 const PAGES_MI = [['mi-inicio','Início'], ['mi-dados','Dados gerais'], ['mi-diretor','Visão do Diretor'], ['mi-redes','Distribuidores e redes'], ['mi-lojas','Lojas'], ['mi-executivos','Executivos'], ['mi-skus','SKUs e faltas'], ['mi-auditoria','Auditoria do PBI']];
+const FILTROS_NI = [['canal','Canal'],['segmento','Segmento'],['fab','Fabricante'],['marca','Marca']];
+const PAGES_NI = [['ni-inicio','Início'], ['ni-categorias','Categorias'], ['ni-segmentos','Segmentos'], ['ni-concorrencia','Concorrência'], ['ni-canais','Canais'], ['ni-geografia','Geografia'], ['ni-skus','SKUs'], ['ni-mes','Mês a mês']];
 const PAGES_EX = [['ex-inicio','Início'], ['ex-dados','Dados gerais'], ['ex-diretor','Visão do Diretor'], ['ex-clientes','Clientes'], ['ex-lojas','Lojas'], ['ex-executivos','Executivos'], ['ex-skus','SKUs e faltas']];
 const PAGES_SO = [
   ['inicio','Início'], ['geral','Dados gerais'], ['veja','Veja'], ['vanish','Vanish'], ['harpic','Harpic'], ['finish','Finish'],
@@ -40,18 +44,25 @@ const PAI = {veja: 'geral', vanish: 'geral', harpic: 'geral', finish: 'geral', h
   'redes-scan': 'clientes', 'redes-col': 'clientes', confronto: 'inicio', depara: 'inicio', base: 'inicio', 'si-base': 'si-inicio'};
 const TODAS_PAGES = [...PAGES_SO, ...PAGES_SI];
 const S = {page: 'inicio', f: {}, corte: DSO.corte, ui: {}, uiSO: {}, uiSI: {}, fSO: {}, fSI: {}, corteSO: DSO.corte, corteSI: DSI ? DSI.corte : DSO.corte,
-  uiEX: {}, fEX: {}, corteEX: DEX ? DEX.corte : DSO.corte, uiMI: {}, fMI: {}, corteMI: DMI ? DMI.corte : DSO.corte};
+  uiEX: {}, fEX: {}, corteEX: DEX ? DEX.corte : DSO.corte, uiMI: {}, fMI: {}, corteMI: DMI ? DMI.corte : DSO.corte,
+  uiNI: {}, fNI: {}, corteNI: DNI ? DNI.corte : DSO.corte, niCat: 0, niGeo: 'CTO', niMed: 0, niMk: 'padrao'};
 FILTROS_SO.forEach(([k]) => { S.fSO[k] = new Set(); S.fSI[k] = new Set(); });
 FILTROS_EX.forEach(([k]) => { S.fEX[k] = new Set(); });
 FILTROS_MI.forEach(([k]) => { S.fMI[k] = new Set(); });
+FILTROS_NI.forEach(([k]) => { S.fNI[k] = new Set(); });
 function aplicarModo(m) {   // troca a perna: dados, dicionário, medidas, filtros e páginas
   if (m === 'si' && !DSI) m = 'so';
   if (m === 'ex' && !DEX) m = 'so';
   if (m === 'mi' && !DMI) m = 'so';
+  if (m === 'ni' && !DNI) m = 'so';
   if (MODO === m && NIV) return;
-  if (NIV) { if (MODO === 'si') S.corteSI = S.corte; else if (MODO === 'ex') S.corteEX = S.corte; else if (MODO === 'mi') S.corteMI = S.corte; else S.corteSO = S.corte; }
+  if (NIV) { if (MODO === 'si') S.corteSI = S.corte; else if (MODO === 'ex') S.corteEX = S.corte; else if (MODO === 'mi') S.corteMI = S.corte; else if (MODO === 'ni') S.corteNI = S.corte; else S.corteSO = S.corte; }
   if (m === 'mi') {   // MSL Indireto: o mesmo motor do MSL Direto sobre a base do canal indireto (lojas da lista oficial, sell out do Colecta)
     MODO = m; D = DMI; dic = D.dic; FILTROS = FILTROS_MI; PAGES = PAGES_MI; S.f = S.fMI; S.ui = S.uiMI; S.corte = S.corteMI;
+    return;
+  }
+  if (m === 'ni') {   // Nielsen: cubo de mercado próprio; categoria, geografia e medida são seletores únicos
+    MODO = m; D = DNI; dic = D.dic; FILTROS = FILTROS_NI; PAGES = PAGES_NI; S.f = S.fNI; S.ui = S.uiNI; S.corte = S.corteNI;
     return;
   }
   if (m === 'ex') {   // MSL Direto: base própria; as medidas, níveis e anos das outras pernas não se aplicam (o mês de corte vira o mês vigente, em AAAAMM)
@@ -80,8 +91,8 @@ function aplicarModo(m) {   // troca a perna: dados, dicionário, medidas, filtr
   S.corte = m === 'si' ? S.corteSI : S.corteSO;
 }
 aplicarModo('so');
-const modoDaPagina = pg => (String(pg).startsWith('si-') ? 'si' : String(pg).startsWith('ex-') ? 'ex' : String(pg).startsWith('mi-') ? 'mi' : 'so');
-const INICIO = () => ({si: 'si-inicio', ex: 'ex-inicio', mi: 'mi-inicio'}[MODO] || 'inicio');
+const modoDaPagina = pg => (String(pg).startsWith('si-') ? 'si' : String(pg).startsWith('ex-') ? 'ex' : String(pg).startsWith('mi-') ? 'mi' : String(pg).startsWith('ni-') ? 'ni' : 'so');
+const INICIO = () => ({si: 'si-inicio', ex: 'ex-inicio', mi: 'mi-inicio', ni: 'ni-inicio'}[MODO] || 'inicio');
 
 /* ---------- estado ----------
    Site (GitHub): o recorte fica no endereço da página, então o link já abre filtrado.
@@ -106,11 +117,16 @@ function lerHash() {
   FILTROS.forEach(([k]) => S.f[k].clear());
   S.corte = D.corte;
   let rg = MODO === 'mi' ? (D.RG[D.regra.padrao] ? D.regra.padrao : D.RGL[0][0]) : null;   // MSL Indireto: a régua vem do link (sem ela, a oficial)
+  if (MODO === 'ni') { S.niCat = 0; S.niGeo = 'CTO'; S.niMed = 0; S.niMk = 'padrao'; }   // Nielsen: categoria, geografia, medida e mercado vêm do link
   qs.forEach(q => {
     const i = q.indexOf('='); if (i < 0) return;
     const k = q.slice(0, i), v = q.slice(i + 1);
     if (k === 'corte') { const n = +v; if (n >= 1 && n <= D.ult26) S.corte = n; }
     else if (k === 'reg' && MODO === 'mi') { if (D.RG[v]) rg = v; }
+    else if (MODO === 'ni' && k === 'cat') { const i = D.cats.findIndex(c => c.cod === v); if (i >= 0) S.niCat = i; }
+    else if (MODO === 'ni' && k === 'geo') { if (D.dic.geo.includes(v)) S.niGeo = v; }
+    else if (MODO === 'ni' && k === 'med') S.niMed = v === '1' ? 1 : 0;
+    else if (MODO === 'ni' && k === 'mk') S.niMk = v === 'total' ? 'total' : 'padrao';
     else if (S.f[k] && v) v.split('|').forEach(x => { const i = id(k, x); if (i >= 0) S.f[k].add(i); });
   });
   if (rg) { D.reg = rg; D.col.c = D.RG[rg].c; D.col.r = D.RG[rg].r; }
@@ -122,6 +138,7 @@ function gravarHash(novaEntrada = false) {
     return;
   }
   const p = [S.page];
+  if (MODO === 'ni') { if (S.niCat) p.push('cat=' + D.cats[S.niCat].cod); if (S.niGeo !== 'CTO') p.push('geo=' + S.niGeo); if (S.niMed === 1) p.push('med=1'); if (S.niMk === 'total') p.push('mk=total'); }
   FILTROS.forEach(([k]) => { if (S.f[k].size) p.push(k + '=' + [...S.f[k]].map(i => dic[k][i]).join('|')); });
   if (S.corte !== D.corte) p.push('corte=' + S.corte);
   if (MODO === 'mi' && D.reg !== (D.regra.padrao || D.RGL[0][0])) p.push('reg=' + D.reg);
@@ -134,6 +151,7 @@ function gravarHash(novaEntrada = false) {
 let BASE = [], PBASE = [], OMB = [], OMB_ANT = [];
 function filtrar() {
   if (EXM()) { exFiltrar(); return; }   // MSL Direto e Indireto: filtra lojas e SKUs da base de MSL
+  if (NIM()) { niFiltrar(); return; }   // Nielsen: as páginas somam o cubo na hora, no recorte marcado
   const ativos = FILTROS.filter(([k]) => k !== 'marca' && k !== 'segmento' && S.f[k].size).map(([k]) => [COL[k], S.f[k]]);
   BASE = D.rows.filter(r => ativos.every(([c, s]) => s.has(r[c])));
   PBASE = MODO === 'si' ? (D.plano || []).filter(r => ativos.every(([c, s]) => s.has(r[c]))) : [];
@@ -388,6 +406,7 @@ const FERIADOS = new Set(['2026-11-02', '2026-11-15', '2026-11-20', '2026-12-25'
 function validade() {
   if (MODO === 'ex') return validadeEx();
   if (MODO === 'mi') return validadeMi();
+  if (MODO === 'ni') return validadeNi();
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   if (MODO === 'si') {
     if (!D.om) return null;
@@ -416,16 +435,17 @@ const amTxt = am => `${mes(+am.slice(4))}/${am.slice(2, 4)}`;
 const fonte = k => ((DSO.atualizacao || {}).fontes || []).find(f => f.id === k) || null;
 const fontesDaPagina = (pg = S.page) => (FONTES_PG[pg] || FONTES_PADRAO).map(fonte).filter(Boolean);
 const fechadoFonte = f => f.fechado || f.ate;   // a régua compara o último mês FECHADO: o parcial não conta
-const estadoFonte = f => (f.congelada ? 'flat' : fechadoFonte(f) < mesEsperado() ? 'warn' : f.parcial ? 'parc' : 'ok');
-const faltaFonte = f => `Falta ${f.parcial && f.ate === mesEsperado() ? 'fechar ' : ''}${amTxt(mesEsperado())}`;
+const espFonte = f => (f && f.id === 'nielsen' ? mesEsperadoNi() : mesEsperado());   // a Nielsen chega cerca de 4 semanas depois do fim do mês
+const estadoFonte = f => (f.congelada ? 'flat' : fechadoFonte(f) < espFonte(f) ? 'warn' : f.parcial ? 'parc' : 'ok');
+const faltaFonte = f => `Falta ${f.parcial && f.ate === espFonte(f) ? 'fechar ' : ''}${amTxt(espFonte(f))}`;
 function quandoFonte(f, curto) {   // "extraído em 22/10/2026 · out/26 parcial até 21/10"; curto: "extraído em 22/10, out/26 parcial até 21/10"
   if (f.congelada) return `base encerrada, dado até ${f.ate_txt}`;
-  const ext = f.extraido ? `extraído em ${curto ? f.extraido.slice(0, 5) : f.extraido}` : '';
+  const ext = f.extraido ? `${f.id === 'nielsen' ? 'recebido' : 'extraído'} em ${curto ? f.extraido.slice(0, 5) : f.extraido}` : '';   // a Nielsen não é extraída: o CMI manda a base
   return [ext, f.parcial ? `${f.ate_txt} parcial até ${f.ate_dia.slice(0, 5)}` : `dado até ${f.ate_txt}`].filter(Boolean).join(curto ? ', ' : ' · ');
 }
 const avisoFonte = f => (estadoFonte(f) === 'warn' ? `Desatualizado: ${faltaFonte(f).toLowerCase()}. ` : '') + (f.obs || '');
 function faixaFontes() {   // selos "Dados de" logo abaixo do título de cada página do Sell Out, com a nota do mês parcial
-  const L = MODO === 'so' ? fontesDaPagina() : MODO === 'ex' ? fontesEx() : MODO === 'mi' ? fontesMi() : []; if (!L.length) return '';
+  const L = MODO === 'so' ? fontesDaPagina() : MODO === 'ex' ? fontesEx() : MODO === 'mi' ? fontesMi() : MODO === 'ni' ? fontesNi() : []; if (!L.length) return '';
   const np = MODO === 'ex' ? exNotaParcial() : MODO === 'mi' ? miNotaParcial() : notaParcial();
   return `<div class="fontes"><span class="fontes-lab">Dados de</span>` +
     L.map(f => `<span class="selo ${estadoFonte(f)}" title="${esc(avisoFonte(f))}">${esc(f.nome)} · ${esc(quandoFonte(f))}</span>`).join('') +
@@ -472,10 +492,10 @@ function nav() {
   const topo = document.getElementById('topo');
   const ini = INICIO();
   if (topo) topo.innerHTML = `<div class="topo-in"><a class="topo-tit" href="#${ini}" data-act="pg" data-pg="${ini}"><h1>Governança CTO</h1></a>
-    <div class="topo-meio">${seloValidade()}<span>${MODO === 'so' ? esc(topoFontes()) : MODO === 'ex' ? esc(topoEx()) : MODO === 'mi' ? esc(topoMi()) : `Atualizado em ${D.gerado.split(' ')[0]} · Sell In`}</span>${window.DASH_COFRE ? '<a href="#sair" data-act="sair" title="Fechar o acesso neste aparelho">Sair</a>' : ''}</div>
+    <div class="topo-meio">${seloValidade()}<span>${MODO === 'so' ? esc(topoFontes()) : MODO === 'ex' ? esc(topoEx()) : MODO === 'mi' ? esc(topoMi()) : MODO === 'ni' ? esc(topoNi()) : `Atualizado em ${D.gerado.split(' ')[0]} · Sell In`}</span>${window.DASH_COFRE ? '<a href="#sair" data-act="sair" title="Fechar o acesso neste aparelho">Sair</a>' : ''}</div>
     <div class="topo-logo"><img src="assets/reckitt_logo.png" alt="Reckitt"></div></div>`;
   const atual = PAI[S.page] || S.page;
-  document.getElementById('gnav').innerHTML = '<div class="nav-rol">' + (EXM() ? PAGES.map(([pg, n]) => `<a class="nav ${atual === pg ? 'on' : ''}" href="#${pg}" data-act="pg" data-pg="${pg}">${n}</a>`).join('') : NAV.filter(([, so, si]) => (MODO === 'si' ? si : so || (DSI && si))).map(([n, so, si]) => {
+  document.getElementById('gnav').innerHTML = '<div class="nav-rol">' + (EXM() || NIM() ? PAGES.map(([pg, n]) => `<a class="nav ${atual === pg ? 'on' : ''}" href="#${pg}" data-act="pg" data-pg="${pg}">${n}</a>`).join('') : NAV.filter(([, so, si]) => (MODO === 'si' ? si : so || (DSI && si))).map(([n, so, si]) => {
     const alvo = MODO === 'si' ? si : (so || si), on = atual === so || atual === si;
     return `<a class="nav ${on ? 'on' : ''} ${n === 'RV' ? 'rv' : ''}" href="#${alvo}" data-act="pg" data-pg="${alvo}">${n}</a>`;
   }).join('')) + `</div><span class="acoes"><button class="btn-top" data-act="apres" title="Abre a página aberta como slides, no recorte marcado"><span class="lg">Modo Apresentação</span><span class="sm">Slides</span></button>
@@ -484,6 +504,7 @@ function nav() {
 }
 function opcoes(k) {
   if (EXM()) return exOpcoes(k);
+  if (NIM()) return niOpcoes(k);
   let ids = dic[k].map((_, i) => i);
   if (k === 'marca') ids = ids.filter(i => i !== TODAS);
   if (k === 'segmento') {
@@ -496,8 +517,8 @@ function opcoes(k) {
 }
 function fbar() {
   const ativo = FILTROS.some(([k]) => S.f[k].size);
-  document.getElementById('fbar').innerHTML = (EXM() ? exSeletorMes() + (MODO === 'mi' && D.RGL.length > 1 ? `<label class="cut">Régua <select data-act="mireg" title="Muda a régua do MSL no site inteiro">${D.RGL.map(([k, n]) => `<option value="${esc(k)}" ${k === D.reg ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>` : '') : `<label class="cut">Mês de corte <select data-act="corte">${ate(D.ult26).map(m => `<option value="${m}" ${m === S.corte ? 'selected' : ''}>${mes(m)}/26${parcialDe('base') && parcialDe('base').mes === m ? ' (parcial)' : ''}</option>`).join('')}</select></label>`) +
-    (DSI || DEX || DMI ? `<span class="modo" role="tablist" aria-label="Perna"><button data-act="modo" data-m="so" class="${MODO === 'so' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'so'}">Sell Out</button>${DSI ? `<button data-act="modo" data-m="si" class="${MODO === 'si' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'si'}">Sell In</button>` : ''}${DEX ? `<button data-act="modo" data-m="ex" class="${MODO === 'ex' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'ex'}">MSL Direto</button>` : ''}${DMI ? `<button data-act="modo" data-m="mi" class="${MODO === 'mi' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'mi'}">MSL Indireto</button>` : ''}</span>` : '') +
+  document.getElementById('fbar').innerHTML = (EXM() ? exSeletorMes() + (MODO === 'mi' && D.RGL.length > 1 ? `<label class="cut">Régua <select data-act="mireg" title="Muda a régua do MSL no site inteiro">${D.RGL.map(([k, n]) => `<option value="${esc(k)}" ${k === D.reg ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>` : '') : NIM() ? niBarra() : `<label class="cut">Mês de corte <select data-act="corte">${ate(D.ult26).map(m => `<option value="${m}" ${m === S.corte ? 'selected' : ''}>${mes(m)}/26${parcialDe('base') && parcialDe('base').mes === m ? ' (parcial)' : ''}</option>`).join('')}</select></label>`) +
+    (DSI || DEX || DMI || DNI ? `<span class="modo" role="tablist" aria-label="Perna"><button data-act="modo" data-m="so" class="${MODO === 'so' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'so'}">Sell Out</button>${DSI ? `<button data-act="modo" data-m="si" class="${MODO === 'si' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'si'}">Sell In</button>` : ''}${DEX ? `<button data-act="modo" data-m="ex" class="${MODO === 'ex' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'ex'}">MSL Direto</button>` : ''}${DMI ? `<button data-act="modo" data-m="mi" class="${MODO === 'mi' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'mi'}">MSL Indireto</button>` : ''}${DNI ? `<button data-act="modo" data-m="ni" class="${MODO === 'ni' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'ni'}">Nielsen</button>` : ''}</span>` : '') +
     FILTROS.map(([k, n]) => {
       const st = S.f[k];
       const txt = st.size === 1 ? nomeFiltro(k, [...st][0]) : n;
@@ -509,7 +530,7 @@ function fbar() {
   if (fs) fs.innerHTML = `<span class="fsel-lab">Filtros:</span><div class="fsel-box">${tags.join('') || '<span class="vazio">Nenhum filtro: visão completa da regional.</span>'}</div>
     <button class="chip clear" data-act="limpar" ${ativo ? '' : 'disabled'}>Limpar</button>`;
 }
-const nomeFiltro = (k, i) => (!EXM() && (k === 'grp' || k === 'executivo') ? tit(dic[k][i]) : esc(dic[k][i]));   // Execução: nomes como no PBI
+const nomeFiltro = (k, i) => (NIM() && k === 'segmento' ? esc(niSegTxt(i)) : NIM() && k === 'canal' ? niCanal(i) : !EXM() && (k === 'grp' || k === 'executivo') ? tit(dic[k][i]) : esc(dic[k][i]));   // Execução: nomes como no PBI
 let POP = null;
 function abrirPop(k, btn) {
   fecharPop();
@@ -553,7 +574,9 @@ document.addEventListener('click', e => {
     if ((t.dataset.k === 'scsel' || t.dataset.k === 'clsel' || t.dataset.k.startsWith('sel')) && t.dataset.v) { const d = document.querySelector('#app .det'); if (d) { const off = document.querySelector('.gnav').offsetHeight + document.querySelector('.fbar').offsetHeight + 12; scrollTo({top: d.getBoundingClientRect().top + scrollY - off}); } }
   }
   else if (act === 'pg') { e.preventDefault(); irPara(t.dataset.pg); }
-  else if (act === 'modo') { if (t.dataset.m !== MODO) irPara({si: 'si-inicio', ex: 'ex-inicio', mi: 'mi-inicio'}[t.dataset.m] || 'inicio'); }
+  else if (act === 'modo') { if (t.dataset.m !== MODO) irPara({si: 'si-inicio', ex: 'ex-inicio', mi: 'mi-inicio', ni: 'ni-inicio'}[t.dataset.m] || 'inicio'); }
+  else if ((act === 'nimed' || act === 'nimk') && NIM()) { if (act === 'nimed') S.niMed = t.dataset.v === '1' ? 1 : 0; else S.niMk = t.dataset.v === 'total' ? 'total' : 'padrao'; atualizar(); }
+  else if (act === 'nicat') { e.preventDefault(); if (NIM() && D.cats[+t.dataset.v]) { S.niCat = +t.dataset.v; ['segmento', 'fab', 'marca'].forEach(k => S.f[k].clear()); atualizar(); scrollTo({top: 0}); } }   // Nielsen: troca a categoria (segmento, fabricante e marca são da categoria)
   else if (act === 'exir') { e.preventDefault(); S.ui[t.dataset.k] = t.dataset.v; irPara(t.dataset.pg); exRolarDet(t.dataset.k, t.dataset.v); }   // Execução: abre outra página já com a aba ou o item escolhido
   else if (act === 'excel') exportarExcel(t);
   else if (act === 'csv') baixarCSV(t);
@@ -563,6 +586,12 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   if (e.target.dataset.act === 'corte') { S.corte = +e.target.value; atualizar(); }
+  if (NIM() && ['nicat', 'nigeo', 'nimed', 'nimk'].includes(e.target.dataset.act)) {   // Nielsen: seletores únicos da barra
+    const a = e.target.dataset.act, v = e.target.value;
+    if (a === 'nicat' && D.cats[+v]) { S.niCat = +v; ['segmento', 'fab', 'marca'].forEach(k => S.f[k].clear()); }
+    else if (a === 'nigeo') S.niGeo = v; else if (a === 'nimed') S.niMed = v === '1' ? 1 : 0; else if (a === 'nimk') S.niMk = v === 'total' ? 'total' : 'padrao';
+    atualizar();
+  }
   if (e.target.dataset.act === 'mireg' && MODO === 'mi' && D.RG[e.target.value]) { D.reg = e.target.value; D.col.c = D.RG[D.reg].c; D.col.r = D.RG[D.reg].r; atualizar(); }   // atualizar grava a régua no link
 });
 function irPara(pg) {
@@ -592,7 +621,7 @@ addEventListener('resize', () => { clearTimeout(tRz); tRz = setTimeout(() => { i
 function hero(eyebrow, t1, t2, side = '', sub = '') {   // sub: frase descritiva abaixo do título, quando a parte cinza do título traz a conclusão
   return `<section class="hero${eyebrow ? ' sm' : ''}"><div>${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ''}<h1>${t1} <span>${t2}</span></h1>${sub ? `<p class="hero-sub">${sub}</p>` : ''}${faixaFontes()}</div>${side}</section>`;
 }
-const recorteResumo = () => FILTROS.filter(([k]) => S.f[k].size).map(([k, n]) => `${n}: ${[...S.f[k]].map(i => (EXM() ? esc(dic[k][i]) : tit(dic[k][i]))).join(', ')}`).join(' · ');
+const recorteResumo = () => FILTROS.filter(([k]) => S.f[k].size).map(([k, n]) => `${n}: ${[...S.f[k]].map(i => (NIM() ? nomeFiltro(k, i) : EXM() ? esc(dic[k][i]) : tit(dic[k][i]))).join(', ')}`).join(' · ');
 function recorteTxt() { return ''; }   // o recorte aparece na faixa "Filtros:" do topo, nos slides e no Excel
 
 function pgInicio() {
@@ -868,7 +897,7 @@ function termometro(itens) {   // quantas crescem, ficam estáveis e caem
 }
 function thSort(t, c, rot, cls = '') { const k = S.ui['sort' + t] || ''; const on = k.replace('-', '') === String(c); return `<th class="sort ${cls}" data-act="sort" data-t="${t}" data-c="${c}">${rot}${on ? (k.startsWith('-') ? ' ↑' : ' ↓') : ''}</th>`; }
 function ordena(lista, t, colunas, padrao) {
-  const k = S.ui['sort' + t] || String(padrao), asc = k.startsWith('-'), f = colunas[+k.replace('-', '')];
+  const k = S.ui['sort' + t] || String(padrao), asc = k.startsWith('-'), f = colunas[+k.replace('-', '')] || colunas[+String(padrao).replace('-', '')] || (() => 0);   // coluna guardada que não existe mais (a tabela mudou de colunas): a ordem padrão
   return lista.sort((a, b) => { const x = f(a), y = f(b);
     if (typeof x === 'string') return (asc ? 1 : -1) * String(y).localeCompare(String(x), 'pt-BR');
     const fx = Number.isFinite(x), fy = Number.isFinite(y); if (fx !== fy) return fx ? -1 : 1; if (!fx) return 0;   // sem valor vai para o fim
@@ -1189,7 +1218,7 @@ function pgDepara() {
 }
 
 function tabelaFontes() {
-  const L = ((DSO.atualizacao || {}).fontes || []).filter(f => f.id !== 'execucao' && f.id !== 'msl_indireto'); if (!L.length) return '';   // De-para do Sell Out: as fontes do MSL Direto e do MSL Indireto têm a própria faixa "Dados de"
+  const L = ((DSO.atualizacao || {}).fontes || []).filter(f => f.id !== 'execucao' && f.id !== 'msl_indireto' && f.id !== 'nielsen'); if (!L.length) return '';   // De-para do Sell Out: as fontes do MSL Direto e do MSL Indireto têm a própria faixa "Dados de"
   const sit = f => ({ok: ['Em dia', 'up'], parc: [`Em dia, ${f.ate_txt} parcial`, 'parc'], warn: [faltaFonte(f), 'warn'], flat: ['Encerrada', 'flat']})[estadoFonte(f)];
   return `<div class="card"><p class="eyebrow">Data de cada fonte</p><div class="tw"><table><thead><tr><th class="l">Fonte</th><th class="l">Extraída em</th><th class="l">Dado até</th><th class="l">Último mês fechado</th><th class="l">Situação</th><th class="l">O que é</th></tr></thead><tbody>` +
     L.map(f => `<tr><td class="l b">${esc(f.nome)}</td><td class="l">${esc(f.extraido ? f.extraido + (f.hora ? ' ' + f.hora : '') : '-')}</td><td class="l">${esc(f.ate_dia + (f.parcial ? ` (${f.ate_txt} parcial)` : ''))}</td><td class="l">${esc(f.fechado_txt || f.ate_txt)}</td><td class="l">${selo(sit(f))}</td><td class="l txt">${esc(f.obs || '')}</td></tr>`).join('') +
@@ -1799,12 +1828,12 @@ function exCurva(o, J, alto = SLIDE ? 330 : 240) {   // MSL % mês a mês: ano a
   const s0 = [], s1 = [];
   for (let m = 1; m <= 12; m++) { s0.push(val(Y - 1, m)); s1.push(val(Y, m)); }
   const xs = [...s0, ...s1].filter(isFinite).map(x => x * 100), tem0 = s0.some(isFinite), temVar = s0.some((a, j) => isFinite(a) && isFinite(s1[j]));
-  if (!xs.length) return `<div class="empty">${MODO === 'mi' ? 'Sem dado neste recorte.' : 'Sem auditoria neste recorte.'}</div>`;
+  if (!xs.length) return `<div class="empty">${MODO === 'mi' || MODO === 'ni' ? 'Sem dado neste recorte.' : 'Sem auditoria neste recorte.'}</div>`;
   const pl = 40, pr = 12, pt = 24, gw = (W - pl - pr) / 12, comVal = gw >= 40, comVar = gw >= 46, pb = comVar ? 50 : 28;
   const lo = Math.min(...xs), hi = Math.max(...xs), folga = Math.max(2, (hi - lo) * 0.15);
   let y0 = Math.max(0, Math.floor((lo - folga) / 5) * 5); const y1 = Math.min(100, Math.ceil((hi + folga) / 5) * 5); if (y1 - y0 < 10) y0 = Math.max(0, y1 - 10);
   const passo = y1 - y0 > 40 ? 20 : y1 - y0 > 20 ? 10 : 5, px = m => pl + (m - 0.5) * gw, py = x => pt + (y1 - x * 100) / (y1 - y0) * (H - pt - pb);
-  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="MSL ${tem0 ? `${Y - 1} e ` : ''}${Y} por mês">`;
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${MODO === 'ni' ? 'Share' : 'MSL'} ${tem0 ? `${Y - 1} e ` : ''}${Y} por mês">`;
   const jm = J.idx.filter(i => +D.meses[i].slice(0, 4) === Y).map(i => +D.meses[i].slice(4));
   if (jm.length) s += `<rect x="${(pl + (Math.min(...jm) - 1) * gw + 2).toFixed(1)}" y="${pt - 18}" width="${((Math.max(...jm) - Math.min(...jm) + 1) * gw - 4).toFixed(1)}" height="${(H - pb - pt + 18).toFixed(1)}" rx="10" fill="#F5F5F7"/>`;
   for (let g = y0; g <= y1 + 1e-9; g += passo) { const y = py(g / 100).toFixed(1); s += `<line x1="${pl}" x2="${W - pr}" y1="${y}" y2="${y}" stroke="#ECECEF"/><text x="${pl - 6}" y="${(+y + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="#86868B">${g}%</text>`; }
@@ -2874,11 +2903,424 @@ function tabelaParaLinhas(tb) {   // respeita colspan e rowspan; qualificadores 
   }
   return {cab, linhas};
 }
+/* ======================= Perna Nielsen: mercado e share da Reckitt nas categorias Nielsen e IQVIA (base mensal do time de CMI) =======================
+   Linha do cubo: [geografia, categoria, canal, fabricante, marca, segmento, reckitt (0/1), medida (0 = R$, 1 = unidades ou volume), um valor por mês].
+   Categoria e geografia são seletores únicos (não se somam); Canal e Segmento definem o mercado; Fabricante e Marca trocam o foco
+   (sem eles, o foco é a Reckitt). Share do mês = foco sobre mercado; share de período = média simples das shares mensais (método do slide de share do CMI).
+   Mês antes do primeiro mês com dado da categoria (cats[].ini) não entra em período nenhum: o período fica "sem dado". */
+function montarDNI(n) {
+  if (!n || !Array.isArray(n.meses) || !n.meses.length || !n.dic || !Array.isArray(n.f) || !n.f.length || !Array.isArray(n.cats) || !n.cats.length) return null;
+  const M = n.meses.length, dic = {cat: n.dic.cat, geo: n.dic.geo, canal: n.dic.canal, fab: n.dic.fab, marca: n.dic.marca, segmento: n.dic.seg};
+  const por = new Map();   // categoria x geografia -> linhas
+  n.f.forEach(r => { if (!Array.isArray(r) || r.length !== 8 + M) throw new Error('linha do cubo fora do formato'); const k = r[1] * 64 + r[0]; let a = por.get(k); if (!a) por.set(k, a = []); a.push(r); });
+  const bench = new Map(); ((n.bench || {}).f || []).forEach(r => { let a = bench.get(r[0]); if (!a) bench.set(r[0], a = []); a.push(r); });
+  const sk = n.skus || {}, skf = new Map(); (sk.f || []).forEach(r => skf.set(r[0] * 2 + r[1], r.slice(2)));
+  const fx = n.fonte || {};
+  return {M, meses: n.meses.map(String), dic, cats: n.cats, por, bench, bgeos: (n.bench || {}).geos || [], skItens: sk.itens || [], skf, canalTxt: n.canal_txt || {}, segTxt: n.seg_txt || {}, fonte: fx,
+    tem: n.meses.map(() => true), parc: -1, ateDia: '', corte: +n.meses[M - 1], ult26: +n.meses[M - 1], gerado: DSO.gerado,
+    rodape: ['Reckitt · Governança CTO · Nielsen e IQVIA: mercado e share da Reckitt nas categorias da base do CMI.', `Fonte: ${fx.nome || 'base do CMI'}. Dado licenciado, uso interno.`]};
+}
+const NIM = () => MODO === 'ni';
+const titTxt = s => String(s).toLowerCase().replace(/(^|[\s(+.\-/&])([a-zà-ú])/g, (m, a, b) => a + b.toUpperCase());   // nome em texto puro (o esc vem depois)
+const niCat = () => D.cats[S.niCat] || D.cats[0];
+const niIni = (ci = S.niCat) => (D.cats[ci] && D.cats[ci].ini) || 0;   // primeiro mês com dado da categoria
+const niGeoDe = (c, g = S.niGeo) => (c.geo_txt[g] ? g : 'CTO');   // UF escolhida numa categoria que só abre por área: lê a Área VII
+const niGeoEf = (c = niCat()) => niGeoDe(c);
+const niGeoTxt = (g = niGeoEf(), c = niCat()) => c.geo_txt[g] || g;
+const niNaGeo = (g = niGeoEf(), c = niCat()) => (g === 'BR' ? 'no Brasil' : g === 'CTO' ? (c.abre === 'area' ? 'na Área VII (Centro-Oeste)' : 'na região CTO (DF, GO, MT, MS e TO/PA/AP)')
+  : g === 'CO' ? 'no Centro-Oeste (DF, GO, MT e MS)' : g === 'TO_PA_AP' ? 'em TO, PA e AP' : 'em ' + g);
+const niGi = g => D.dic.geo.indexOf(g);
+const niUn = (c = niCat()) => c.un || 'Unidades';
+const niMedNome = () => (S.niMed === 1 ? niUn() : 'Valor (R$)');
+const niMedTxt = () => (S.niMed === 1 ? niUn().toLowerCase() : 'valor');   // no meio da frase: em valor, em unidades, em volume
+const niVar = x => `${x >= 0 ? 'cresceu' : 'caiu'} ${pc(Math.abs(x)).replace('+', '')}`;
+const niRs = x => (!isFinite(x) ? '' : Math.abs(x) >= 1e6 ? mi(x) : Math.abs(x) >= 1e3 ? `R$ ${nf1.format(x / 1e3)} mil` : `R$ ${nf0.format(x)}`);
+const niQtd = x => (!isFinite(x) ? '' : Math.abs(x) >= 1e4 ? curto(x) : Math.abs(x) >= 100 ? nf0.format(x) : Math.abs(x) >= 10 ? nf1.format(x) : Math.abs(x) >= 1 || x === 0 ? nf2.format(x) : new Intl.NumberFormat('pt-BR', {minimumFractionDigits: 3, maximumFractionDigits: 3}).format(x));
+const niFmt = (x, med = S.niMed) => (med === 1 ? niQtd(x) : niRs(x));
+const niCanal = i => esc(D.canalTxt[D.dic.canal[i]] || D.dic.canal[i]);
+const niSegTxt = i => D.segTxt[D.dic.segmento[i]] || titTxt(D.dic.segmento[i]);
+const niSeg = i => esc(niSegTxt(i));
+const niFab = i => (D.dic.fab[i] === 'RECKITT' ? '<b>Reckitt</b>' : tit(D.dic.fab[i]));
+const niMarca = i => { const m = String(D.dic.marca[i]); return `<span class="${mkCls(m)}">${tit(m)}</span>`; };
+const niFocoAtivo = () => !!(S.f.fab.size || S.f.marca.size);
+const niEhFoco = r => (niFocoAtivo() ? (!S.f.fab.size || S.f.fab.has(r[3])) && (!S.f.marca.size || S.f.marca.has(r[4])) : r[6] === 1);   // fabricante E marca: a marca daquele fabricante
+const niFocoNome = () => { if (!niFocoAtivo()) return 'Reckitt';   // texto puro; "Veja (Reckitt)" quando marca e fabricante estão marcados
+  const f = [...S.f.fab].map(i => (D.dic.fab[i] === 'RECKITT' ? 'Reckitt' : titTxt(D.dic.fab[i]))).join(' + '), m = [...S.f.marca].map(i => titTxt(D.dic.marca[i])).join(' + ');
+  return f && m ? `${m} (${f})` : f || m; };
+const niFocoDe = () => (niFocoAtivo() ? 'de ' + niFocoNome() : 'da Reckitt');   // "o share da Reckitt", "o share de Veja"
+const niMkTxt = (c = niCat()) => (S.f.segmento.size ? 'segmentos do filtro' : (c.fora_padrao || []).length && S.niMk !== 'total' ? `sem ${(c.fora_padrao || []).map(titTxt).join(', ')}` : 'categoria inteira');
+const niCap = s => String(s).charAt(0).toUpperCase() + String(s).slice(1);
+const niGeoCats = (g = S.niGeo) => (g === 'BR' ? 'no Brasil' : g === 'CTO' || !g ? 'na Área VII nas categorias por área e na região CTO nas categorias por UF'
+  : `${niNaGeo(g, D.cats.find(c => c.abre === 'uf') || niCat())} nas categorias por UF e na Área VII nas categorias por área`);   // o título de quem mostra todas as categorias
+
+function niLinhas(ci, g, opc = {}) {   // linhas da categoria na geografia, no mercado do recorte (Canal e Segmento; Superfícies sem Desinfetante no padrão)
+  const c = D.cats[ci], rows = D.por.get(ci * 64 + niGi(g)) || [];
+  const fc = !opc.semCanal && !opc.inteira && S.f.canal.size ? S.f.canal : null, fs = !opc.inteira && S.f.segmento.size ? S.f.segmento : null;
+  const fora = !fs && S.niMk !== 'total' && (c.fora_padrao || []).length ? new Set(c.fora_padrao.map(x => D.dic.segmento.indexOf(x))) : null;
+  return rows.filter(r => (!fc || fc.has(r[2])) && (!fs || fs.has(r[5])) && (!fora || !fora.has(r[5])));
+}
+function niSerie(rows, med = S.niMed, foco = niEhFoco) {   // {t: mercado, c: foco} mês a mês
+  const t = new Float64Array(D.M), c = new Float64Array(D.M);
+  for (const r of rows) { if (r[7] !== med) continue; const f = foco(r); for (let j = 0; j < D.M; j++) { const v = r[8 + j]; t[j] += v; if (f) c[j] += v; } }
+  return {t, c};
+}
+const niRb = r => r[6] === 1;
+function niFatias(rows, chave, med = S.niMed) {   // fatias do mercado (segmento, canal): t = mercado da fatia, c = foco dentro dela
+  const out = new Map();
+  for (const r of rows) { if (r[7] !== med) continue; const k = chave(r); let o = out.get(k); if (!o) out.set(k, o = {t: new Float64Array(D.M), c: new Float64Array(D.M)}); const f = niEhFoco(r); for (let j = 0; j < D.M; j++) { const v = r[8 + j]; o.t[j] += v; if (f) o.c[j] += v; } }
+  return out;
+}
+function niJogadores(rows, chave, med = S.niMed) {   // fabricantes e marcas: t = mercado do recorte inteiro, c = valor do grupo
+  const T = niSerie(rows, med).t, out = new Map();
+  for (const r of rows) { if (r[7] !== med) continue; const k = chave(r); let o = out.get(k); if (!o) out.set(k, o = {t: T, c: new Float64Array(D.M)}); for (let j = 0; j < D.M; j++) o.c[j] += r[8 + j]; }
+  return out;
+}
+function niJanela(ci = S.niCat) {   // mês, trimestre (o mês e os 2 anteriores), ano (jan até o mês) e 12 meses; b = mesmo período do ano anterior, p = período anterior
+  let v = D.meses.indexOf(String(S.corte)); if (v < 0) v = D.M - 1;
+  const ini = niIni(ci), Y = +D.meses[v].slice(0, 4), mm = +D.meses[v].slice(4);
+  const fx = (a, b) => { if (a < ini || b >= D.M || a > b) return null; const L = []; for (let i = a; i <= b; i++) L.push(i); return L; };   // mês sem dado na categoria: período indisponível
+  const P = {mes: {nome: 'Mês', a: fx(v, v), b: fx(v - 12, v - 12), p: fx(v - 1, v - 1)}, tri: {nome: 'Trimestre', a: fx(v - 2, v), b: fx(v - 14, v - 12), p: fx(v - 5, v - 3)},
+    ano: {nome: 'Ano', a: fx(v - mm + 1, v), b: fx(v - mm - 11, v - 12), p: null}, m12: {nome: '12 meses', a: fx(v - 11, v), b: fx(v - 23, v - 12), p: null}};
+  Object.values(P).forEach(o => { o.txt = o.a ? exFaixaTxt(o.a) : ''; o.btxt = o.b ? exFaixaTxt(o.b) : 'sem o ano anterior'; o.ptxt = o.p ? exFaixaTxt(o.p) : ''; });
+  const per = P[S.ui.niper] && P[S.ui.niper].a ? S.ui.niper : ['tri', 'mes', 'ano', 'm12'].find(k => P[k].a) || 'mes';
+  return {v, Y, P, per, X: P[per], txt: exRot(v), a5: String(Y - 1).slice(2), a6: String(Y).slice(2), idx: P.tri.a || [v], ant: P.tri.b || [], temAnt: !!P.tri.b, temY0: v - 12 >= ini, parc: false};
+}
+const niSoma = (a, idx) => (idx ? idx.reduce((s, i) => s + a[i], 0) : NaN);
+function niShare(o, idx) { if (!idx) return NaN; let s = 0, n = 0; idx.forEach(i => { if (o.t[i] > 0) { s += o.c[i] / o.t[i]; n++; } }); return n ? s / n : NaN; }   // média simples das shares mensais
+function niNum(o, X) {   // os números de um grupo no período: mercado, foco, share e variações
+  const ma = niSoma(o.t, X.a), mb = niSoma(o.t, X.b), ca = niSoma(o.c, X.a), cb = niSoma(o.c, X.b), sa = niShare(o, X.a), sb = niShare(o, X.b), sp = niShare(o, X.p);
+  return {ma, mb, ca, cb, sa, sb, sp, dm: varr(ma, mb), dc: varr(ca, cb), ds: sa - sb, dsp: sa - sp};
+}
+const niPills = () => { const J = niJanela(); return `<div class="pills" style="margin:0 0 18px">${Object.entries(J.P).map(([k, o]) => (o.a ? `<button data-act="ui" data-k="niper" data-v="${k}" class="${k === J.per ? 'on' : ''}">${o.nome} · ${esc(o.txt)}</button>` : '')).join('')}</div>`; };
+const niPerTxt = J => (J.X.a ? `${J.X.nome.toLowerCase()} ${J.X.txt}` : 'período sem dado');
+
+/* recorte, selos e seletores */
+function niFiltrar() {
+  if (!(S.niCat >= 0 && S.niCat < D.cats.length)) S.niCat = 0;
+  const v = D.meses.indexOf(String(S.corte)); if (v < 0 || v < niIni()) S.corte = D.corte;   // mês sem dado nesta categoria (link antigo ou troca de categoria): volta ao último mês
+  const ok = {canal: new Set(), segmento: new Set(), fab: new Set(), marca: new Set()};
+  (D.por.get(S.niCat * 64 + niGi(niGeoEf())) || []).forEach(r => { ok.canal.add(r[2]); ok.segmento.add(r[5]); ok.fab.add(r[3]); ok.marca.add(r[4]); });
+  Object.keys(ok).forEach(k => S.f[k].forEach(i => { if (!ok[k].has(i)) S.f[k].delete(i); }));   // link de outra categoria: o filtro que não existe nesta sai
+}
+function niOpcoes(k) {
+  const col = {canal: 2, segmento: 5, fab: 3, marca: 4}[k], s = new Set();
+  (D.por.get(S.niCat * 64 + niGi(niGeoEf())) || []).forEach(r => s.add(r[col]));
+  const ids = [...s], nome = i => (k === 'segmento' ? niSegTxt(i) : String(D.dic[k][i]));
+  return k === 'canal' ? ids.sort((a, b) => a - b) : ids.sort((a, b) => nome(a).localeCompare(nome(b), 'pt-BR'));
+}
+function mesEsperadoNi() {   // a base do CMI chega cerca de 4 semanas depois do fim do mês: a partir do dia 28, o selo cobra o mês anterior
+  const h = new Date(); let a = h.getFullYear(), m = h.getMonth() + 1 - (h.getDate() >= 28 ? 1 : 2); if (m <= 0) { m += 12; a--; }
+  return `${a}${String(m).padStart(2, '0')}`;
+}
+const fontesNi = () => [fonte('nielsen')].filter(Boolean);
+function validadeNi() {
+  const f = fonte('nielsen'), ult = D.meses[D.M - 1], velho = ult < mesEsperadoNi();
+  return {velho, parcial: false, txt: `Nielsen até ${amTxt(ult)}${f && f.extraido ? ` · base do CMI de ${f.extraido.slice(0, 5)}` : ''}${velho ? ` · falta ${amTxt(mesEsperadoNi())}` : ''}`};
+}
+const topoNi = () => { const f = fonte('nielsen'); return ['Nielsen', f && f.extraido ? `base do CMI de ${f.extraido.slice(0, 5)}` : '', `site de ${DSO.gerado.slice(0, 5)}`].filter(Boolean).join(' · '); };
+const niGeoCurto = (g, c = niCat()) => ({CTO: c.abre === 'area' ? 'Área VII' : 'Região CTO', CO: 'Centro-Oeste', TO_PA_AP: 'TO, PA e AP', BR: 'Brasil'}[g] || g);
+function niBarra() {   // barra do topo: mês, categoria e geografia (medida e mercado ficam no topo de cada página, para a barra caber na tela)
+  const c = niCat(), ini = niIni();
+  return `<label class="cut">Mês <select data-act="corte" title="Muda o mês do site inteiro">${D.meses.map((m, i) => `<option value="${m}" ${+m === +S.corte ? 'selected' : ''}${i < ini ? ' disabled' : ''}>${exRot(i)}${i < ini ? ' (sem dado)' : ''}</option>`).join('')}</select></label>` +
+    `<label class="cut">Categoria <select data-act="nicat">${D.cats.map((x, i) => `<option value="${i}" ${i === S.niCat ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select></label>` +
+    `<label class="cut">Geografia <select data-act="nigeo" title="${esc(niGeoTxt())}">${Object.keys(c.geo_txt).map(k => `<option value="${esc(k)}" ${k === niGeoEf() ? 'selected' : ''}>${esc(niGeoCurto(k))}</option>`).join('')}</select></label>`;
+}
+function niOpcBar(pills = true, semMed = false) {   // medida e mercado (Superfícies), mais o período das tabelas; semMed: página que só lê valor
+  const c = niCat(), seg = (act, L, on) => `<div class="seg">${L.map(([v, n]) => `<button data-act="${act}" data-v="${v}" class="${v === on ? 'on' : ''}">${esc(n)}</button>`).join('')}</div>`;
+  return `<div style="display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin:0 0 14px">${semMed ? '' : seg('nimed', [['0', 'Valor (R$)'], ['1', niUn()]], String(S.niMed === 1 ? 1 : 0))}` +
+    ((c.fora_padrao || []).length ? seg('nimk', [['padrao', 'Sem ' + c.fora_padrao.map(titTxt).join(', ')], ['total', 'Categoria inteira']], S.niMk === 'total' ? 'total' : 'padrao') : '') + '</div>' + (pills ? niPills() : '');
+}
+function linhasRecorteNi() {
+  const J = niJanela(), f = fonte('nielsen'), c = niCat(), usaPer = !['ni-inicio', 'ni-mes'].includes(S.page);
+  const L = [['Perna', 'Nielsen'], ['Página', PAGES.find(p => p[0] === S.page)[1]], ['Mês', exRot(J.v)]];
+  if (usaPer) L.push(['Período das tabelas', J.X.a ? `${J.X.nome}: ${J.X.txt}, contra ${J.X.btxt}` : 'sem dado']);
+  L.push(['Categoria', `${c.nome} (${c.fonte})`], ['Geografia', niGeoTxt()], ['Medida', niMedNome()], ['Mercado', niMkTxt()], ['Foco do share', niFocoNome()],
+    ['Regra', 'Share do mês = foco sobre o mercado; share de período = média simples das shares mensais; mercado e R$ somam os meses']);
+  FILTROS.forEach(([k, n]) => L.push([n, S.f[k].size ? [...S.f[k]].map(i => (k === 'segmento' ? niSegTxt(i) : dic[k][i])).join(', ') : 'Todos']));
+  L.push(['Site publicado em', DSO.gerado]);
+  if (f) L.push([`Fonte ${f.nome}`, `${quandoFonte(f)}${f.obs ? '. ' + f.obs : ''}`]);
+  (D.fonte.obs || []).forEach((x, i) => L.push([`Premissa ${i + 1}`, String(x)]));
+  L.push(['Exportado em', new Date().toLocaleString('pt-BR')], ['Link desta visão', location.href]);
+  return L;
+}
+const niRecSlide = () => { const J = niJanela(); return `${niCat().nome} · ${niGeoTxt()} · mês ${exRot(J.v)}`; };
+const niCapaSlide = () => { const J = niJanela(); return ['ni-inicio', 'ni-mes'].includes(S.page) ? `share ${niFocoDe()} em ${niCat().nome}, ${niGeoTxt()}, mês ${J.txt}` : `share ${niFocoDe()} em ${niCat().nome}, ${niGeoTxt()}: ${niPerTxt(J)} contra ${J.X.btxt}`; };
+
+/* componentes */
+function niKpis(o, J, oBR) {
+  const card = (lab, val, d, sub) => `<div class="card kpi"><div class="lab">${lab}</div><div class="val">${val}</div><div class="sub dv">${d}<span>${sub}</span></div></div>`;
+  const sh = k => { const X = J.P[k]; if (!X.a) return card(`Share ${X.nome.toLowerCase()}`, 'sem dado', '', 'a categoria ainda não tinha dado na base'); const x = niNum(o, X), b = oBR ? niNum(oBR, X) : null;
+    return card(`Share ${X.nome.toLowerCase()} · ${esc(X.txt)}`, isFinite(x.sa) ? p1(x.sa) : 'sem dado', vpp(x.ds), `${X.b ? `contra ${p1(x.sb)} em ${esc(X.btxt)}` : 'sem o ano anterior na base'}${b && isFinite(b.sa) ? ` · Brasil ${p1(b.sa)}${isFinite(b.ds) ? ` (${ppTxt(b.ds)})` : ''}` : ''}`); };
+  const X = J.P.tri, x = niNum(o, X), F = esc(niFocoNome());
+  return `<div class="grid g3">${sh('mes')}${sh('tri')}${sh('ano')}${sh('m12')}` +
+    card(`Mercado · ${esc(X.txt || 'trimestre')}`, X.a ? niFmt(x.ma) : 'sem dado', vbig(x.dm), X.b ? `em ${esc(niMedTxt())}, contra ${niFmt(x.mb)} em ${esc(X.btxt)}` : `em ${esc(niMedTxt())}`) +
+    card(`${F} · ${esc(X.txt || 'trimestre')}`, X.a ? niFmt(x.ca) : 'sem dado', vbig(x.dc), X.b ? `contra ${niFmt(x.cb)} em ${esc(X.btxt)}` : '') + '</div>';
+}
+function niCurvaGeo(oA, oB, nA, nB, J, alto = SLIDE ? 330 : 240) {   // share mês a mês nos últimos 24 meses: a geografia em rosa, o Brasil em cinza
+  const W = Math.round(Math.max(240, Math.min(1180, larguraCard()))), H = alto, i0 = Math.max(niIni(), J.v - 23), idx = []; for (let i = i0; i <= J.v; i++) idx.push(i);
+  const sa = idx.map(i => (oA.t[i] > 0 ? oA.c[i] / oA.t[i] : NaN)), sb = oB ? idx.map(i => (oB.t[i] > 0 ? oB.c[i] / oB.t[i] : NaN)) : [];
+  const xs = [...sa, ...sb].filter(isFinite).map(x => x * 100); if (!xs.length) return '<div class="empty">Sem dado neste recorte.</div>';
+  const pl = 40, pr = 12, pt = 20, pb = 30, gw = (W - pl - pr) / idx.length, lo = Math.min(...xs), hi = Math.max(...xs), folga = Math.max(1, (hi - lo) * 0.15);
+  let y0 = Math.max(0, Math.floor((lo - folga) / 5) * 5); const y1 = Math.min(100, Math.ceil((hi + folga) / 5) * 5); if (y1 - y0 < 10) y0 = Math.max(0, y1 - 10);
+  const passo = y1 - y0 > 40 ? 20 : y1 - y0 > 20 ? 10 : 5, px = j => pl + (j + 0.5) * gw, py = x => pt + (y1 - x * 100) / (y1 - y0) * (H - pt - pb);
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Share mês a mês">`;
+  for (let g = y0; g <= y1 + 1e-9; g += passo) { const y = py(g / 100).toFixed(1); s += `<line x1="${pl}" x2="${W - pr}" y1="${y}" y2="${y}" stroke="#ECECEF"/><text x="${pl - 6}" y="${(+y + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="#86868B">${g}%</text>`; }
+  const linha = (L, cor, w) => { let out = '', cur = []; const fecha = () => { if (cur.length > 1) out += `<polyline points="${cur.join(' ')}" fill="none" stroke="${cor}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"/>`; cur = []; };
+    L.forEach((x, j) => { if (isFinite(x)) cur.push(px(j).toFixed(1) + ',' + py(x).toFixed(1)); else fecha(); }); fecha(); return out; };
+  s += linha(sb, '#B0B0B8', 2.5) + linha(sa, '#FF007F', 3);
+  sa.forEach((x, j) => { if (!isFinite(x)) return; s += `<circle cx="${px(j).toFixed(1)}" cy="${py(x).toFixed(1)}" r="3.5" fill="#FF007F"/>`; if (gw >= 40 || j === sa.length - 1 || j === 0) s += `<text class="vl" x="${px(j).toFixed(1)}" y="${(py(x) - 9).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="600" fill="#1D1D1F">${nf1.format(x * 100)}</text>`; });
+  idx.forEach((i, j) => { const m = +D.meses[i].slice(4); if (gw >= 30 || m === 1 || j === 0 || j === idx.length - 1) s += `<text x="${px(j).toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="10.5" fill="#6E6E73">${gw >= 30 ? MESES[m - 1] : MESES[m - 1][0]}${m === 1 || j === 0 ? '/' + D.meses[i].slice(2, 4) : ''}</text>`;
+    s += `<rect x="${(pl + j * gw).toFixed(1)}" y="0" width="${gw.toFixed(1)}" height="${H}" fill="transparent" data-tip="${esc(`<b>${exRot(i)}</b> · ${esc(nA)}: ${isFinite(sa[j]) ? p1(sa[j]) : 'sem dado'}${oB ? ` · ${esc(nB)}: ${isFinite(sb[j]) ? p1(sb[j]) : 'sem dado'}` : ''}`)}"/>`; });
+  return s + `</svg><div class="legend"><span><i style="background:#FF007F"></i>${esc(nA)}</span>${oB ? `<span><i style="background:#B0B0B8"></i>${esc(nB)}</span>` : ''}<span>Share do mês, últimos ${idx.length} meses</span></div>`;
+}
+const niSpark = (o, J) => exSpark(o, J);
+function niColsShare(J) {   // colunas fixas de share (a ordenação guarda a posição da coluna): ano anterior, período, Δ pp e Δ pp sobre o período anterior (vazia em ano e 12 meses)
+  const X = J.X;
+  return [{c: `Share ${esc(X.btxt)}`, v: x => x.n.sb, h: x => p1(x.n.sb), t: true}, {c: `Share ${esc(X.txt)}`, v: x => x.n.sa, h: x => p1(x.n.sa), b: true, t: true},
+    {c: 'Δ pp vs ano anterior', v: x => x.n.ds, h: x => vppt(x.n.ds), t: true}, {c: X.p ? `Δ pp sobre ${esc(X.ptxt)}` : 'Δ pp sobre o período anterior', v: x => x.n.dsp, h: x => vppt(x.n.dsp), t: true}];
+}
+function niTabFatias(t, rot, Mp, nomeFn, J, opc = {}) {   // segmento ou canal: tamanho, peso, crescimento do mercado e share do foco dentro da fatia, com o Brasil ao lado
+  const X = J.X, tot = opc.tot, mt = tot ? niSoma(tot.t, X.a) : 0, F = esc(niFocoNome());
+  const L = [...Mp.entries()].map(([k, o]) => ({k, o, n: niNum(o, X), br: opc.br && opc.br.get(k) ? niShare(opc.br.get(k), X.a) : NaN})).filter(x => x.n.ma > 0 || x.n.mb > 0);
+  const T = tot ? {k: -1, o: tot, n: niNum(tot, X), br: opc.brTot ? niShare(opc.brTot, X.a) : NaN} : null;
+  const cols = [{c: rot, v: x => semAcento(String(nomeFn(x.k)).replace(/<[^>]+>/g, '')), h: x => nomeFn(x.k), l: true, b: true, t: () => 'Total'},
+    {c: `Mercado ${esc(X.txt)}`, v: x => x.n.ma, h: x => niFmt(x.n.ma), t: true}, {c: 'Peso', v: x => (mt ? x.n.ma / mt : NaN), h: x => p1(mt ? x.n.ma / mt : NaN), t: () => (mt ? '100,0%' : '')},
+    {c: 'Mercado vs ano anterior', v: x => x.n.dm, h: x => vc(x.n.dm), t: true}, {c: `${F} ${esc(X.txt)}`, v: x => x.n.ca, h: x => niFmt(x.n.ca), t: true},
+    {c: `${F} vs ano anterior`, v: x => x.n.dc, h: x => vc(x.n.dc), t: true}, ...niColsShare(J),
+    {c: 'Share Brasil', v: x => x.br, h: x => p1(x.br), t: true}, {c: 'Gap pp', v: x => x.n.sa - x.br, h: x => vppt(x.n.sa - x.br), t: true},
+    {c: `Curva ${J.a5} · ${J.a6}`, h: x => niSpark(x.o, J), oc: true}];
+  return exTabela(t, L, cols, {tot: T, padrao: 1});
+}
+function niPreco(rows, chave, X) {   // preço médio do grupo e do mercado no período e o índice (mercado = 100); X explícito
+  const V = niJogadores(rows, chave, 0), U = niJogadores(rows, chave, 1), out = new Map();
+  const mv = niSoma(niSerie(rows, 0).t, X.a), mu = niSoma(niSerie(rows, 1).t, X.a), pm = mu > 0 ? mv / mu : NaN;
+  V.forEach((o, k) => { const u = U.get(k), va = niSoma(o.c, X.a), ua = u ? niSoma(u.c, X.a) : NaN, p = ua > 0 ? va / ua : NaN; out.set(k, {p, ix: p / pm * 100}); });
+  return {mapa: out, pm};
+}
+const niComPreco = () => niUn() === 'Unidades';   // em volume a unidade da base não é clara: só o índice de preço (mercado = 100), que não depende dela
+function niTabJog(t, rot, rows, chave, nomeFn, J, opc = {}) {
+  const X = J.X, Mp = niJogadores(rows, chave), PR = niPreco(rows, chave, X), BR = opc.brRows ? niJogadores(opc.brRows, chave) : null;
+  const L = [...Mp.entries()].map(([k, o]) => ({k, o, n: niNum(o, X), pr: (PR.mapa.get(k) || {}).p, ix: (PR.mapa.get(k) || {}).ix, br: BR && BR.get(k) ? niShare(BR.get(k), X.a) : NaN})).filter(x => x.n.ca > 0 || x.n.cb > 0);
+  const cols = [{c: rot, v: x => semAcento(String(nomeFn(x.k)).replace(/<[^>]+>/g, '')), h: x => nomeFn(x.k), l: true, b: true}, ...niColsShare(J),
+    {c: `${esc(niMedNome())} ${esc(X.txt)}`, v: x => x.n.ca, h: x => niFmt(x.n.ca)}, {c: 'vs ano anterior', v: x => x.n.dc, h: x => vc(x.n.dc)},
+    {c: 'Share Brasil', v: x => x.br, h: x => p1(x.br)},
+    {c: niComPreco() ? 'Preço médio (R$ por unidade)' : 'Preço médio', v: x => (niComPreco() ? x.pr : NaN), h: x => (niComPreco() && isFinite(x.pr) ? 'R$ ' + n2(x.pr) : '')},
+    {c: 'Índice de preço', v: x => x.ix, h: x => (isFinite(x.ix) ? n0(x.ix) : '')}, {c: `Curva ${J.a5} · ${J.a6}`, h: x => niSpark(x.o, J), oc: true}];
+  return {html: exTabela(t, L, cols, {padrao: 2}), L, pm: PR.pm};
+}
+function niMatriz(rot, itens, J, opc = {}) {   // grupo x mês: share do mês (ou o valor), dos últimos 13 meses com dado
+  const i0 = Math.max(niIni(opc.ci), J.v - 12), idx = []; for (let i = i0; i <= J.v; i++) idx.push(i);
+  const cel = o => i => (opc.valor ? niFmt(o.c[i]) : o.t[i] > 0 ? p1(o.c[i] / o.t[i]) : '');
+  if (!itens.length) return '<div class="empty">Nada neste recorte.</div>';
+  return `<div class="tw fim"><table><thead><tr><th class="l">${rot}</th>${idx.map(i => `<th>${exRot(i)}</th>`).join('')}</tr></thead><tbody>` +
+    itens.map(([nome, o, cl]) => `<tr class="${cl || ''}"><td class="l b">${nome}</td>${idx.map(i => `<td class="${i === J.v ? 'b' : ''}">${cel(o)(i)}</td>`).join('')}</tr>`).join('') + '</tbody></table></div>';
+}
+function niPesoTPA(ci, X) {   // nas categorias por UF: quanto o bloco TO, PA e AP pesa no mercado da região CTO (valor, categoria inteira)
+  const c = D.cats[ci]; if (c.abre !== 'uf' || !X || !X.a) return NaN;
+  const so = s => s.filter(r => r[7] === 0), a = niSerie(so(D.por.get(ci * 64 + niGi('CTO')) || []), 0, niRb).t, b = niSerie(so(D.por.get(ci * 64 + niGi('TO_PA_AP')) || []), 0, niRb).t;
+  const ta = niSoma(a, X.a); return ta > 0 ? niSoma(b, X.a) / ta : NaN;
+}
+
+/* leitura automática: onde ganha e onde perde (nomes vêm da base cifrada) */
+function niLeitura(J, rows, rowsBR) {
+  const X = J.P.tri, o = niSerie(rows), x = niNum(o, X), L = [], lista = a => (a.length > 1 ? a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1] : a[0] || '');
+  if (!X.a) return '<div class="card"><div class="empty">A categoria ainda não tinha dado na base no trimestre escolhido.</div></div>';
+  if (!(x.ma > 0)) return '<div class="card"><div class="empty">Sem mercado neste recorte no trimestre.</div></div>';
+  if (niFocoAtivo() && !(x.ca > 0)) return '<div class="card"><div class="empty">A combinação de fabricante e marca marcada não tem venda neste recorte. Tire um dos dois filtros.</div></div>';
+  const g = niGeoEf(), b = rowsBR ? niNum(niSerie(rowsBR), X) : null, foco = niFocoAtivo() ? esc(niFocoNome()) : 'a Reckitt', Foco = niFocoAtivo() ? foco : 'A Reckitt';
+  const valorDs = S.niMed === 0 && isFinite(x.ds) ? ` A variação de ${ppTxt(x.ds)} equivale a cerca de ${niRs(Math.abs(x.ds) * x.ma)} no trimestre (pp vezes o mercado).` : '';
+  L.push(`${Foco} tem ${p1(x.sa)} de share em ${esc(niCat().nome.toLowerCase())} no trimestre ${esc(X.txt)}, em ${esc(niMedTxt())}, ${esc(niNaGeo(g))}${X.b ? `: ${ppTxt(x.ds)} sobre o mesmo trimestre do ano anterior (${p1(x.sb)})${X.p ? ` e ${ppTxt(x.dsp)} sobre ${esc(X.ptxt)}` : ''}` : X.p ? `: ${ppTxt(x.dsp)} sobre ${esc(X.ptxt)} (sem o mesmo trimestre do ano anterior na base)` : ''}.${valorDs}` +
+    (b && isFinite(b.sa) ? ` No Brasil, ${p1(b.sa)}${isFinite(b.ds) ? ` (${ppTxt(b.ds)} sobre ${esc(X.btxt)})` : ''}: ${x.sa >= b.sa ? `${ppTxt(x.sa - b.sa).replace('+', '')} acima` : `${ppTxt(b.sa - x.sa).replace('+', '')} abaixo`}.` : ''));
+  if (X.b && isFinite(x.dm) && isFinite(x.dc)) {
+    const rel = x.dc - x.dm;
+    const porque = rel < -0.005 ? (x.dc < 0 && x.dm < 0 ? `${Foco} cai mais que o mercado, e é isso que explica a perda de share.` : x.dc < 0 ? `${Foco} cai com o mercado crescendo, e é isso que explica a perda de share.` : `${Foco} cresce menos que o mercado, e é isso que explica a perda de share.`)
+      : rel > 0.005 ? (x.dc >= 0 && x.dm >= 0 ? `${Foco} cresce mais que o mercado, e é isso que sustenta o ganho de share.` : x.dc >= 0 ? `${Foco} cresce com o mercado caindo, e é isso que sustenta o ganho de share.` : `${Foco} cai menos que o mercado, e é isso que segura o share.`)
+      : `${Foco} e o mercado andam juntos.`;
+    L.push(`O mercado ${niVar(x.dm)} no trimestre (${niFmt(x.ma)}); ${foco} ${niVar(x.dc)} (${niFmt(x.ca)}). ${porque}`);
+  }
+  const i0 = Math.max(niIni(), J.v - 12), sm = []; for (let i = i0; i <= J.v; i++) if (o.t[i] > 0) sm.push([i, o.c[i] / o.t[i]]);
+  if (sm.length >= 6) { const mn = sm.reduce((a, z) => (z[1] < a[1] ? z : a)), mx = sm.reduce((a, z) => (z[1] > a[1] ? z : a));
+    if (mn[0] === J.v) L.push(`${esc(niCap(J.txt))} é o menor share dos últimos ${sm.length} meses (${p1(mn[1])}).`); else if (mx[0] === J.v) L.push(`${esc(niCap(J.txt))} é o maior share dos últimos ${sm.length} meses (${p1(mx[1])}).`); }
+  const FB = [...niJogadores(rows, r => r[3]).entries()].map(([k, oo]) => ({k, n: niNum(oo, X)})).filter(z => isFinite(z.n.ds) && D.dic.fab[z.k] !== 'OUTROS FABRICANTES' && (niFocoAtivo() || D.dic.fab[z.k] !== 'RECKITT'));   // com o foco na Reckitt, a 1ª frase já diz o quanto ela ganha ou perde
+  const ganha = FB.filter(z => z.n.ds >= 0.002).sort((a, b) => b.n.ds - a.n.ds).slice(0, 3), perde = FB.filter(z => z.n.ds <= -0.002).sort((a, b) => a.n.ds - b.n.ds).slice(0, 3);
+  if (X.b && (ganha.length || perde.length)) L.push(`${ganha.length ? `Quem mais ganha share: ${lista(ganha.map(z => `${niFab(z.k)} (${ppTxt(z.n.ds)}, ${p1(z.n.sa)})`))}.` : ''} ${perde.length ? `Quem mais perde: ${lista(perde.map(z => `${niFab(z.k)} (${ppTxt(z.n.ds)}, ${p1(z.n.sa)})`))}.` : ''}`.trim());
+  const mt = x.ma, impacto = M => [...M.entries()].map(([k, oo]) => ({k, n: niNum(oo, X)})).filter(z => z.n.ma > 0 && isFinite(z.n.ds)).map(z => ({...z, imp: z.n.ds * z.n.ma / mt})).sort((a, b) => a.imp - b.imp);
+  const frase = (rotulo, I, nomeFn) => { if (!X.b || I.length < 2) return; const pi = I[0], me = I[I.length - 1], q = z => `${nomeFn(z.k)} (${ppTxt(z.n.ds)} no ${rotulo}, que pesa ${p1(z.n.ma / mt)} do mercado)`;
+    L.push(`Por ${rotulo}, ${pi.imp < -0.0005 ? `quem mais tira share é ${q(pi)}` : `nenhum ${rotulo} tira share relevante`}${me.imp > 0.0005 ? `; quem mais põe é ${q(me)}` : ''}.`); };
+  frase('segmento', impacto(niFatias(rows, r => r[5])), niSeg);
+  frase('canal', impacto(niFatias(rows, r => r[2])), niCanal);
+  const PR = niPreco(rows, r => (niEhFoco(r) ? 1 : 0), X), pf = PR.mapa.get(1);
+  if (S.niMed === 0 && pf && isFinite(pf.ix)) L.push(niComPreco() ? `O preço médio ${niFocoAtivo() ? 'de ' + foco : 'da Reckitt'} no trimestre é R$ ${n2(pf.p)} por unidade, índice ${n0(pf.ix)} contra o mercado (mercado = 100).`
+    : `O índice de preço ${niFocoAtivo() ? 'de ' + foco : 'da Reckitt'} no trimestre é ${n0(pf.ix)} contra o mercado (mercado = 100; R$ por volume sobre o R$ por volume do mercado).`);
+  const tpa = g === 'CTO' ? niPesoTPA(S.niCat, X) : NaN;
+  if (isFinite(tpa)) L.push(`O bloco TO, PA e AP pesa ${p1(tpa)} do mercado da região CTO nesta categoria. Para comparar com a Área VII das categorias por área, use a geografia Centro-Oeste (DF, GO, MT e MS).`);
+  return `<div class="card"><ol class="num">${L.map(t => `<li><span>${t}</span></li>`).join('')}</ol></div>`;
+}
+
+/* ----- páginas ----- */
+const niNotaFiltros = txt => `<p class="note" style="margin:10px 0 0">${txt}</p>`;
+function niAvisoGeo() {
+  const c = niCat(); return c.geo_txt[S.niGeo] || !S.niGeo ? '' : `<p class="note">${esc(c.nome)} só abre até a Área VII na base Nielsen: a página mostra a Área VII. A geografia ${esc(niGeoCurto(S.niGeo))} vale para Sanitário, Lava-louças e as categorias da IQVIA.</p>`;
+}
+function niCartaoCat(i, J0) {   // um cartão por categoria: share da Reckitt no trimestre, na geografia escolhida (categoria por área: Área VII), sem os filtros
+  const cc = D.cats[i], gg = niGeoDe(cc), X = niJanela(i).P.tri, so = s => ((cc.fora_padrao || []).length && S.niMk !== 'total' ? s.filter(r => !cc.fora_padrao.includes(D.dic.segmento[r[5]])) : s);
+  const oo = niSerie(so(D.por.get(i * 64 + niGi(gg)) || []), 0, niRb), n = niNum(oo, X), b = gg === 'BR' ? null : niNum(niSerie(so(D.por.get(i * 64 + niGi('BR')) || []), 0, niRb), X), tpa = gg === 'CTO' ? niPesoTPA(i, X) : NaN;
+  return `<a class="card" href="#ni-inicio" data-act="nicat" data-v="${i}" style="color:inherit;text-decoration:none"><p class="eyebrow">${esc(cc.nome)} · ${esc(cc.fonte)}</p><div class="kpi"><div class="val" style="font-size:30px">${X.a ? p1(n.sa) : 'sem dado'}</div>
+    <div class="sub">${[isFinite(n.ds) ? `${vppt(n.ds)} sobre ${esc(X.btxt)}` : '', b && isFinite(b.sa) ? `Brasil ${p1(b.sa)}${isFinite(b.ds) ? ` (${ppTxt(b.ds)})` : ''}` : '', X.a ? `mercado ${niRs(n.ma)}${isFinite(n.dm) ? ` (${pc(n.dm)})` : ''}` : ''].filter(Boolean).join(' · ')}</div></div>${niSpark(oo, {...J0, temY0: true})}
+    <p class="note" style="margin:6px 0 0">${esc(cc.geo_txt[gg])}${isFinite(tpa) ? ` · TO, PA e AP pesam ${p1(tpa)}` : ''}${i === S.niCat ? ' · aberta nas páginas' : ''}</p></a>`;
+}
+function pgNiInicio() {
+  const J = niJanela(), c = niCat(), g = niGeoEf(), rows = niLinhas(S.niCat, g), rowsBR = g === 'BR' ? null : niLinhas(S.niCat, 'BR'), o = niSerie(rows), oBR = rowsBR ? niSerie(rowsBR) : null;
+  const side = `<div class="side">${(DSO.equipe || []).map(([cargo, nome]) => `${esc(cargo)} <span class="lk">${esc(nome)}</span>`).join('<br>')}<br>${esc(c.nome)} · ${esc(niGeoTxt())}<br>Mês ${esc(J.txt)} · ${esc(niMedNome())} · foco <span class="lk">${esc(niFocoNome())}</span></div>`;
+  let h = hero('', 'Nielsen.', 'Mercado e share da Reckitt nas categorias Nielsen e IQVIA, mês a mês.', side);
+  h += niAvisoGeo() + niOpcBar(false);
+  h += `<h2 class="sec">${esc(c.nome)} em números. <span>${esc(niCap(niNaGeo(g)))}, ${esc(niMkTxt())}; share de período = média das shares mensais.</span></h2>` + niKpis(o, J, oBR);
+  const X = J.P.tri;
+  h += `<h2 class="sec">As categorias. <span>Share da Reckitt ${X.a ? 'no trimestre ' + esc(X.txt) : 'em ' + esc(J.txt)} em cada categoria, ${esc(niGeoCats())}.</span></h2><div class="grid g3">` +
+    D.cats.map((cc, i) => niCartaoCat(i, J)).join('') + '</div>' + niNotaFiltros('Os cartões leem a Reckitt inteira em valor, sem os filtros de canal, segmento, fabricante e marca. Clique numa categoria para abrir as páginas nela.');
+  h += `<h2 class="sec">A leitura. <span>Onde ganha e onde perde share, calculada sobre o recorte marcado.</span></h2>` + niLeitura(J, rows, rowsBR);
+  h += `<h2 class="sec">A curva do share. <span>${esc(niFocoNome())} mês a mês, ${J.temY0 ? `${J.Y - 1} contra ${J.Y}` : String(J.Y)}${oBR ? ', e contra o Brasil' : ''}.</span></h2><div class="card"><p class="eyebrow">Share do mês · ${esc(niGeoTxt())}</p>${exCurva(o, {...J, txt: X.txt || J.txt})}</div>`;
+  if (oBR) h += `<div class="card"><p class="eyebrow">${esc(niGeoTxt())} contra o Brasil · últimos ${J.v - Math.max(niIni(), J.v - 23) + 1} meses</p>${niCurvaGeo(o, oBR, niGeoTxt(), 'Brasil', J)}</div>`;
+  const IDX = [['ni-categorias', 'Categorias', 'Todas as categorias lado a lado: mercado, crescimento, share, o Brasil e quanto o Δ de share vale em R$.'],
+    ['ni-segmentos', 'Segmentos', 'Dentro da categoria: o tamanho de cada segmento, quanto cresce e o share da Reckitt em cada um.'],
+    ['ni-concorrencia', 'Concorrência', 'Fabricantes e marcas: share, crescimento, preço e quem ganha e quem perde.'],
+    ['ni-canais', 'Canais', 'Hiper, super, tradicional, independentes, atacado e cash & carry: peso, crescimento e share em cada canal.'],
+    ['ni-geografia', 'Geografia', 'A região CTO contra as outras áreas e UFs e o Brasil.'],
+    ['ni-skus', 'SKUs', 'Os SKUs da Reckitt e os maiores da concorrência na região CTO.'],
+    ['ni-mes', 'Mês a mês', 'Mercado, Reckitt e share mês a mês, marca a marca.']];
+  h += `<h2 class="sec">O índice. <span>As páginas da perna Nielsen.</span></h2><div class="grid g3">` +
+    IDX.map(([pg, n, d], i) => `<a class="card idx" href="#${pg}" data-act="pg" data-pg="${pg}" style="color:inherit;text-decoration:none"><p class="eyebrow">${String(i + 1).padStart(2, '0')}</p><h4>${n}</h4><p>${d}</p><div class="go"><span style="color:var(--link)">Abrir ›</span></div></a>`).join('') + '</div>';
+  h += `<h2 class="sec">Como ler. <span>Regras da perna Nielsen.</span></h2><div class="card"><ol class="num">${[
+    'Fonte: a base mensal do time de CMI, com Nielsen (Superfícies, Alvejantes seguros, Sanitário e Lava-louças) e IQVIA (Complementos nutricionais, Preservativos e Lubrificantes). Dado licenciado: uso interno.',
+    'Categoria e Geografia são seletores únicos: categorias diferentes são mercados diferentes e não se somam.',
+    'Superfícies e Alvejantes seguros só abrem até a Área VII, o recorte Nielsen do Centro-Oeste. Sanitário, Lava-louças e IQVIA abrem por UF; a região CTO soma DF, GO, MT, MS e o bloco TO, PA e AP, que vem junto na base. Para comparar com a Área VII, use Centro-Oeste.',
+    'Share do mês = foco sobre o mercado. Share de trimestre, ano e 12 meses = média simples das shares mensais, o mesmo método do slide de share do CMI. Mercado e R$ somam os meses.',
+    'Canal e Segmento definem o mercado. Fabricante e Marca trocam o foco: sem eles, o foco é a Reckitt; com eles, o share passa a ser o do fabricante ou da marca marcados (os dois juntos: a marca daquele fabricante).',
+    'Em Superfícies, o padrão do site é o mercado sem Desinfetante, segmento praticamente sem marca Reckitt; o botão Categoria inteira inclui o Desinfetante.',
+    'O seletor Mês muda o site inteiro. A comparação é sempre contra o mesmo período do ano anterior; no mês e no trimestre, também contra o período anterior. Sanitário, Lava-louças e IQVIA só têm dado a partir de jul/24 ou ago/24.',
+    'Marcas e fabricantes com menos de 0,4% do mercado de 12 meses viram Outras marcas e Outros fabricantes; a Reckitt fica sempre aberta. Lysoform é da SC Johnson e não entra como Reckitt.'].map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
+  return h;
+}
+function pgNiCategorias() {
+  const J = niJanela(), g = niGeoEf(), per = J.per;
+  let h = hero('NIELSEN · CATEGORIAS', 'As categorias.', `Share da Reckitt no ${esc(niPerTxt(J))} em cada categoria, ${esc(niGeoCats())}.`);
+  h += niPills();
+  const L = D.cats.map((cc, i) => {
+    const gg = niGeoDe(cc), Ji = niJanela(i), X = Ji.P[per].a ? Ji.P[per] : {a: null, b: null, p: null}, so = s => ((cc.fora_padrao || []).length && S.niMk !== 'total' ? s.filter(r => !cc.fora_padrao.includes(D.dic.segmento[r[5]])) : s);
+    const o = niSerie(so(D.por.get(i * 64 + niGi(gg)) || []), 0, niRb), ob = niSerie(so(D.por.get(i * 64 + niGi('BR')) || []), 0, niRb), n = niNum(o, X), nb = niNum(ob, X);
+    return {k: i, o, n, br: nb.sa, dbr: nb.ds, gg, rs: n.ds * n.ma};
+  });
+  const X = J.X;
+  const cols = [{c: 'Categoria', v: x => semAcento(D.cats[x.k].nome), h: x => `<button class="lnk" data-act="nicat" data-v="${x.k}">${esc(D.cats[x.k].nome)}</button>`, l: true, b: true},
+    {c: 'Fonte', v: x => D.cats[x.k].fonte, h: x => esc(D.cats[x.k].fonte), l: true}, {c: 'Geografia', v: x => x.gg, h: x => esc(niGeoCurto(x.gg, D.cats[x.k])), l: true},
+    {c: `Mercado ${esc(X.txt)}`, v: x => x.n.ma, h: x => niRs(x.n.ma)}, {c: 'Mercado vs ano anterior', v: x => x.n.dm, h: x => vc(x.n.dm)},
+    {c: `Reckitt ${esc(X.txt)}`, v: x => x.n.ca, h: x => niRs(x.n.ca)}, {c: 'Reckitt vs ano anterior', v: x => x.n.dc, h: x => vc(x.n.dc)}, ...niColsShare(J),
+    {c: 'Δ de share em R$', v: x => x.rs, h: x => (isFinite(x.rs) ? `<span class="vr ${cls(x.rs) || 'flat'}">${x.rs < 0 ? '-' : '+'}${niRs(Math.abs(x.rs))}</span>` : '')},
+    {c: 'Share Brasil', v: x => x.br, h: x => (x.gg === 'BR' ? '' : p1(x.br))}, {c: 'Δ pp Brasil', v: x => x.dbr, h: x => (x.gg === 'BR' ? '' : vppt(x.dbr))},
+    {c: 'Gap pp', v: x => x.n.sa - x.br, h: x => (x.gg === 'BR' ? '' : vppt(x.n.sa - x.br))}, {c: `Curva ${J.a5} · ${J.a6}`, h: x => niSpark(x.o, {...J, temY0: true}), oc: true}];
+  h += `<h2 class="sec">Lado a lado. <span>Em valor (R$), a Reckitt inteira em cada categoria; ${S.niMk === 'total' ? 'Superfícies com a categoria inteira' : 'Superfícies sem Desinfetante'}.</span></h2><div class="card">${exTabela('nicat', L, cols, {padrao: 3})}` +
+    niNotaFiltros('Esta página lê o total de cada categoria, sem os filtros de canal, segmento, fabricante e marca (Superfícies segue o botão Sem Desinfetante ou Categoria inteira). Categoria por área lê a Área VII. Δ de share em R$ = variação do share vezes o mercado do período: quanto a Reckitt venderia a mais (ou a menos) com o share do ano anterior. Clique na categoria para abrir as outras páginas nela.') + '</div>';
+  h += `<h2 class="sec">O share mês a mês. <span>Reckitt em valor, últimos 13 meses; em negrito, o mês escolhido.</span></h2><div class="card">${niMatriz('Categoria', L.map(x => [esc(D.cats[x.k].nome), x.o]), J, {ci: -1})}</div>`;
+  return h;
+}
+function pgNiSegmentos() {
+  const J = niJanela(), c = niCat(), g = niGeoEf(), rows = niLinhas(S.niCat, g), rowsBR = g === 'BR' ? null : niLinhas(S.niCat, 'BR');
+  let h = hero('NIELSEN · SEGMENTOS', `${esc(c.nome)}.`, `O tamanho de cada segmento e o share ${esc(niFocoDe())} dentro dele, ${esc(niNaGeo(g))}.`) + niAvisoGeo() + niOpcBar();
+  const Mp = niFatias(rows, r => r[5]), BRm = rowsBR ? niFatias(rowsBR, r => r[5]) : null;
+  h += `<h2 class="sec">Segmento a segmento. <span>${esc(niCap(niPerTxt(J)))} contra ${esc(J.X.btxt)}, em ${esc(niMedTxt())}; ${esc(niMkTxt())}.</span></h2><div class="card">${niTabFatias('niseg', 'Segmento', Mp, niSeg, J, {tot: niSerie(rows), br: BRm, brTot: rowsBR ? niSerie(rowsBR) : null})}${niNotaFiltros('Peso = parte do mercado do recorte. Share = foco dentro do segmento. Gap = share na geografia menos o share do Brasil no mesmo segmento.')}</div>`;
+  h += `<h2 class="sec">O share mês a mês. <span>Share ${esc(niFocoDe())} dentro de cada segmento.</span></h2><div class="card">${niMatriz('Segmento', [...Mp.entries()].sort((a, b) => niSoma(b[1].t, J.P.tri.a || [J.v]) - niSoma(a[1].t, J.P.tri.a || [J.v])).map(([k, o]) => [niSeg(k), o]).concat([['Total', niSerie(rows), 'tot']]), J)}</div>`;
+  return h;
+}
+function pgNiConcorrencia() {
+  const J = niJanela(), c = niCat(), g = niGeoEf(), rows = niLinhas(S.niCat, g), rowsBR = g === 'BR' ? null : niLinhas(S.niCat, 'BR');
+  let h = hero('NIELSEN · CONCORRÊNCIA', `${esc(c.nome)}.`, `Quem ganha e quem perde share ${esc(niNaGeo(g))}.`) + niAvisoGeo() + niOpcBar();
+  const F = niTabJog('nifab', 'Fabricante', rows, r => r[3], niFab, J, {brRows: rowsBR}), Mk = niTabJog('nimk', 'Marca', rows, r => r[4], niMarca, J, {brRows: rowsBR});
+  const X = J.X, lista = a => (a.length > 1 ? a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1] : a[0] || '');
+  const mv = F.L.filter(x => isFinite(x.n.ds) && D.dic.fab[x.k] !== 'OUTROS FABRICANTES'), sobe = mv.filter(x => x.n.ds >= 0.002).sort((a, b) => b.n.ds - a.n.ds).slice(0, 4), cai = mv.filter(x => x.n.ds <= -0.002).sort((a, b) => a.n.ds - b.n.ds).slice(0, 4);
+  h += `<h2 class="sec">Quem ganha e quem perde. <span>Variação do share no ${esc(niPerTxt(J))} contra ${esc(X.btxt)}.</span></h2><div class="card"><ol class="num">` +
+    (X.b ? [sobe.length ? `Ganham share: ${lista(sobe.map(x => `${niFab(x.k)} (${ppTxt(x.n.ds)}, ${p1(x.n.sa)})`))}.` : 'Nenhum fabricante ganha mais de 0,2 pp.', cai.length ? `Perdem share: ${lista(cai.map(x => `${niFab(x.k)} (${ppTxt(x.n.ds)}, ${p1(x.n.sa)})`))}.` : 'Nenhum fabricante perde mais de 0,2 pp.'] : ['Sem o mesmo período do ano anterior na base.']).map(t => `<li><span>${t}</span></li>`).join('') + '</ol></div>';
+  const notaPreco = niComPreco() ? `Índice de preço = preço médio sobre o preço médio do mercado (R$ ${n2(F.pm)} por unidade), vezes 100.` : 'Índice de preço = R$ por volume do fabricante sobre o R$ por volume do mercado, vezes 100. A base não diz a unidade do volume, por isso o preço em R$ não aparece.';
+  h += `<h2 class="sec">Os fabricantes. <span>Share no mercado do recorte (${esc(niMkTxt())}), em ${esc(niMedTxt())}, com o índice de preço.</span></h2><div class="card">${F.html}${niNotaFiltros(`${notaPreco} O share aqui não muda com o filtro de fabricante ou marca: a tabela mostra todos.`)}</div>`;
+  h += `<h2 class="sec">As marcas. <span>As marcas da Reckitt sempre abertas; as da concorrência com menos de 0,4% do mercado somadas em Outras marcas.</span></h2><div class="card">${Mk.html}` +
+    niNotaFiltros((c.fora_padrao || []).length && S.niMk !== 'total' ? 'O corte de 0,4% é medido no padrão do site e na categoria inteira: marcas fortes no Desinfetante (como Lysoform) ficam abertas, mas aparecem pequenas sem o Desinfetante.' : 'O corte de 0,4% é medido no mercado de 12 meses da região.') + '</div>';
+  return h;
+}
+function pgNiCanais() {
+  const J = niJanela(), c = niCat(), g = niGeoEf(), rows = niLinhas(S.niCat, g), rowsBR = g === 'BR' ? null : niLinhas(S.niCat, 'BR');
+  let h = hero('NIELSEN · CANAIS', `${esc(c.nome)}.`, `O peso de cada canal e o share ${esc(niFocoDe())} em cada um, ${esc(niNaGeo(g))}.`) + niAvisoGeo() + niOpcBar();
+  const Mp = niFatias(rows, r => r[2]), BRm = rowsBR ? niFatias(rowsBR, r => r[2]) : null;
+  h += `<h2 class="sec">Canal a canal. <span>${esc(niCap(niPerTxt(J)))} contra ${esc(J.X.btxt)}, em ${esc(niMedTxt())}.</span></h2><div class="card">${niTabFatias('nican', 'Canal', Mp, niCanal, J, {tot: niSerie(rows), br: BRm, brTot: rowsBR ? niSerie(rowsBR) : null})}${niNotaFiltros(c.abre === 'area' ? 'Nas categorias por área, a Nielsen separa o varejo alimentar (hiper, super, tradicional, independentes, conveniência) do cash & carry. O cash & carry vem como C&C OTHER na Área VII e como C&C no Brasil: o site junta os dois.' : `Nas categorias por UF, a ${esc(c.fonte)} separa as lojas pelo número de checkouts e o atacado.`)}</div>`;
+  h += `<h2 class="sec">O share mês a mês. <span>Share ${esc(niFocoDe())} em cada canal.</span></h2><div class="card">${niMatriz('Canal', [...Mp.entries()].sort((a, b) => a[0] - b[0]).map(([k, o]) => [niCanal(k), o]).concat([['Total', niSerie(rows), 'tot']]), J)}</div>`;
+  return h;
+}
+const niAreaNome = s => (s === 'TT. AREA BR' || s === 'TT. REGIAO BR' ? 'Brasil' : s === 'TO_PA_AP' ? 'TO, PA e AP' : s === 'RR_AM_RO_AC' ? 'RR, AM, RO e AC' : s === 'MA_PI' ? 'MA e PI' : s === 'AL_SE' ? 'AL e SE'
+  : s === 'MET - SP' ? 'Grande SP' : s === 'INT - SP' ? 'Interior SP' : /^AREA /.test(s) ? 'Área ' + s.slice(5) : s);
+function pgNiGeografia() {
+  const J = niJanela(), X = J.X, c = niCat(), ci = S.niCat, rb = D.bench.get(ci) || [], tot = S.niMk === 'total' || !(c.fora_padrao || []).length;
+  let h = hero('NIELSEN · GEOGRAFIA', `${esc(c.nome)}.`, 'A região CTO contra as outras áreas e UFs e o Brasil, em valor.') + niOpcBar(true, true);
+  const por = new Map(), add = (k, r) => { let o = por.get(k); if (!o) por.set(k, o = {t: new Float64Array(D.M), c: new Float64Array(D.M)}); for (let j = 0; j < D.M; j++) { const v = r[4 + j]; if (r[2] === 0) o.t[j] += v; else o.c[j] += v; } };
+  const UF_CTO = ['DF', 'GO', 'MT', 'MS', 'TO_PA_AP'], UF_CO = ['DF', 'GO', 'MT', 'MS'];
+  rb.forEach(r => { if (r[3] === 1 && !tot) return; const s = String(D.bgeos[r[1]]); add(s, r); if (c.abre === 'uf' && UF_CTO.includes(s)) add('Região CTO', r); if (c.abre === 'uf' && UF_CO.includes(s)) add('Centro-Oeste', r); });
+  const cto = new Set(c.abre === 'area' ? ['AREA VII'] : [...UF_CTO, 'Região CTO', 'Centro-Oeste']), soma = new Set(['Região CTO', 'Centro-Oeste']);
+  const L = [...por.entries()].map(([k, o]) => ({k, o, n: niNum(o, X), cto: cto.has(k), br: /^TT\./.test(k), soma: soma.has(k)})).filter(x => x.n.ma > 0);
+  const ordemTopo = x => (x.k === 'Região CTO' ? 0 : x.k === 'Centro-Oeste' ? 1 : x.br ? 2 : 3);
+  L.sort((a, b) => ordemTopo(a) - ordemTopo(b));
+  const cols = [{c: c.abre === 'area' ? 'Área' : 'UF', v: x => (x.soma || x.br ? '0' : '1') + semAcento(niAreaNome(x.k)), h: x => (x.soma ? `<b>${esc(x.k)}</b>` : x.cto ? `<b>${esc(niAreaNome(x.k))}</b> <small class="tag">CTO</small>` : esc(niAreaNome(x.k))), l: true},
+    {c: `Mercado ${esc(X.txt)}`, v: x => x.n.ma, h: x => niRs(x.n.ma)}, {c: 'Mercado vs ano anterior', v: x => x.n.dm, h: x => vc(x.n.dm)}, {c: `Reckitt ${esc(X.txt)}`, v: x => x.n.ca, h: x => niRs(x.n.ca)},
+    {c: 'Reckitt vs ano anterior', v: x => x.n.dc, h: x => vc(x.n.dc)}, ...niColsShare(J), {c: `Curva ${J.a5} · ${J.a6}`, h: x => niSpark(x.o, J), oc: true}];
+  const lin = L.filter(x => !x.soma && !x.br && isFinite(x.n.ds)), alvo = c.abre === 'area' ? L.find(x => x.k === 'AREA VII') : L.find(x => x.k === 'Região CTO'), brl = L.find(x => x.br);
+  let leit = '';
+  if (alvo && X.b && lin.length > 2) { const rk = [...lin].sort((a, b) => a.n.ds - b.n.ds), pos = c.abre === 'area' ? rk.findIndex(x => x.k === 'AREA VII') + 1 : 0;
+    leit = `<div class="card"><ol class="num"><li><span>${esc(c.abre === 'area' ? 'Área VII' : 'Região CTO')}: share de ${p1(alvo.n.sa)} (${ppTxt(alvo.n.ds)} sobre ${esc(X.btxt)}), mercado ${pc(alvo.n.dm)} e Reckitt ${pc(alvo.n.dc)}${brl ? `; no Brasil, ${p1(brl.n.sa)} (${ppTxt(brl.n.ds)}), mercado ${pc(brl.n.dm)} e Reckitt ${pc(brl.n.dc)}` : ''}.</span></li>` +
+      `<li><span>${(() => { const a = rk[0], z = rk[rk.length - 1], nA = q => `${esc(niAreaNome(q.k))} (${ppTxt(q.n.ds)})`, tipo = c.abre === 'area' ? 'as áreas' : 'as UFs';
+        return z.n.ds < 0.0005 ? `Nenhuma ${tipo === 'as áreas' ? 'área' : 'UF'} ganha share: a maior perda é ${nA(a)} e a menor é ${nA(z)}` : a.n.ds > -0.0005 ? `Nenhuma ${tipo === 'as áreas' ? 'área' : 'UF'} perde share: o maior ganho é ${nA(z)} e o menor é ${nA(a)}` : `A maior perda de share é ${nA(a)} e o maior ganho é ${nA(z)}`; })()}${c.abre === 'area' && pos ? (pos === 1 ? `; a Área VII é a que mais perde entre as ${lin.length} áreas` : `; a Área VII é a ${pos}ª que mais perde entre as ${lin.length} áreas`) : ''}.</span></li></ol></div>`; }
+  h += `<h2 class="sec">A leitura. <span>A região contra o Brasil e as outras ${c.abre === 'area' ? 'áreas' : 'UFs'}.</span></h2>${leit || '<div class="card"><div class="empty">Sem o mesmo período do ano anterior na base.</div></div>'}`;
+  h += `<h2 class="sec">${c.abre === 'area' ? 'Área a área' : 'UF a UF'}. <span>Share da Reckitt no ${esc(niPerTxt(J))}, ${tot ? 'categoria inteira' : 'sem ' + esc(c.fora_padrao.map(titTxt).join(', '))}.</span></h2><div class="card">${exTabela('nigeo', L, cols, {on: x => x.cto})}` +
+    niNotaFiltros(`${c.abre === 'area' ? 'Esta categoria só abre por área na Nielsen. O Brasil da Nielsen inclui regiões fora das áreas I a VII.' : 'Esta categoria abre por UF: as UFs somam o Brasil. Região CTO = DF + GO + MT + MS + TO, PA e AP; Centro-Oeste = DF + GO + MT + MS.'} A página lê o total da categoria em valor, sem os filtros de canal, segmento, fabricante e marca (Superfícies segue o botão Sem Desinfetante ou Categoria inteira).`) + '</div>';
+  return h;
+}
+function pgNiSkus() {
+  const J = niJanela(), X = J.X, c = niCat(), ci = S.niCat, quem = S.ui.nisk || 'rb';
+  let h = hero('NIELSEN · SKUs', `${esc(c.nome)}.`, `Os SKUs da Reckitt e os maiores da concorrência ${esc(niNaGeo('CTO'))}.`) + niOpcBar();
+  const mk = niSerie(niLinhas(ci, 'CTO', {semCanal: true}), S.niMed, niRb), fs = S.f.segmento.size ? S.f.segmento : null;
+  const fora = !fs && S.niMk !== 'total' && (c.fora_padrao || []).length ? new Set(c.fora_padrao.map(x => D.dic.segmento.indexOf(x))) : null;
+  const L = D.skItens.map((it, i) => ({it, i})).filter(({it}) => it[0] === ci && (quem === 'todos' || (quem === 'rb') === (it[6] === 1)) && (!fs || fs.has(it[5])) && (!fora || !fora.has(it[5])) &&
+      (!S.f.fab.size || S.f.fab.has(it[4])) && (!S.f.marca.size || S.f.marca.has(it[3])))
+    .map(({it, i}) => { const v = D.skf.get(i * 2 + S.niMed) || [], o = {t: mk.t, c: Float64Array.from(v.length ? v : new Array(D.M).fill(0))}, vv = D.skf.get(i * 2) || [], uu = D.skf.get(i * 2 + 1) || [];
+      const va = X.a ? X.a.reduce((s, j) => s + (vv[j] || 0), 0) : NaN, ua = X.a ? X.a.reduce((s, j) => s + (uu[j] || 0), 0) : NaN;
+      return {k: i, it, o, n: niNum(o, X), pr: ua > 0 ? va / ua : NaN}; })
+    .filter(x => (quem === 'todos' ? x.n.ca > 0 || x.n.cb > 0 : x.n.ca > 0));   // sem venda no período só aparece em Todos
+  const cols = [{c: 'SKU', v: x => semAcento(x.it[1]), h: x => esc(x.it[1]) + (x.it[7] ? ' <small class="tag" title="A Nielsen mudou a descrição deste EAN; as descrições estão somadas">renomeado</small>' : ''), l: true, b: true},
+    {c: 'Marca', v: x => D.dic.marca[x.it[3]], h: x => niMarca(x.it[3]), l: true},
+    {c: `${esc(niMedNome())} ${esc(X.txt)}`, v: x => x.n.ca, h: x => niFmt(x.n.ca)}, {c: `${esc(niMedNome())} ${esc(X.btxt)}`, v: x => x.n.cb, h: x => niFmt(x.n.cb)}, {c: 'vs ano anterior', v: x => x.n.dc, h: x => vc(x.n.dc)},
+    {c: 'Share na categoria', v: x => x.n.sa, h: x => p1(x.n.sa)}, {c: 'Δ pp vs ano anterior', v: x => x.n.ds, h: x => vppt(x.n.ds)},
+    {c: niComPreco() ? 'Preço médio' : 'Preço médio (só em unidades)', v: x => (niComPreco() ? x.pr : NaN), h: x => (niComPreco() && isFinite(x.pr) ? 'R$ ' + n2(x.pr) : '')}, {c: 'Segmento', v: x => niSegTxt(x.it[5]), h: x => niSeg(x.it[5]), l: true},
+    {c: 'Fabricante', v: x => D.dic.fab[x.it[4]], h: x => niFab(x.it[4]), l: true, oc: true}, {c: 'EAN', v: x => x.it[2], h: x => esc(x.it[2]), l: true, k: 'ex-cod', oc: true}, {c: `Curva ${J.a5} · ${J.a6}`, h: x => niSpark(x.o, J), oc: true}];
+  h += `<h2 class="sec">SKU a SKU. <span>${esc(niCap(niPerTxt(J)))} contra ${esc(X.btxt)}, em ${esc(niMedTxt())}, todos os canais.</span></h2><div class="card">` +
+    `<div class="pills" style="margin:0 0 14px">${[['rb', 'Reckitt'], ['conc', 'Concorrência (os 40 maiores)'], ['todos', 'Todos, com os sem venda no período']].map(([k, n]) => `<button data-act="ui" data-k="nisk" data-v="${k}" class="${k === quem ? 'on' : ''}">${n}</button>`).join('')}</div>` +
+    exTabela('nisku', L, cols, {padrao: 2}) + niNotaFiltros(`SKUs ${esc(niNaGeo('CTO'))}, somando todos os canais: o filtro de canal e a geografia não mudam esta tabela. Share na categoria = SKU sobre o mercado da categoria (${esc(niMkTxt())}). Segmento, fabricante e marca filtram a lista. O mesmo EAN com descrição nova na Nielsen fica numa linha só, marcada como renomeado.`) + '</div>';
+  return h;
+}
+function pgNiMes() {
+  const J = niJanela(), c = niCat(), g = niGeoEf(), rows = niLinhas(S.niCat, g), rowsBR = g === 'BR' ? null : niLinhas(S.niCat, 'BR'), o = niSerie(rows);
+  let h = hero('NIELSEN · MÊS A MÊS', `${esc(c.nome)}.`, `Mercado, ${esc(niFocoNome())} e share mês a mês, ${esc(niNaGeo(g))}.`) + niAvisoGeo() + niOpcBar(false);
+  const tot = {t: o.t, c: o.t}, foco = {t: o.t, c: o.c}, q = [0, 0], nq = [0, 0];
+  for (let i = Math.max(niIni(), J.v - 23); i <= J.v; i++) { const k = +D.meses[i].slice(4) % 3 === 0 ? 0 : 1; q[k] += o.t[i]; nq[k]++; }
+  const salto = nq[0] && nq[1] && q[1] > 0 ? (q[0] / nq[0]) / (q[1] / nq[1]) : NaN;   // fim de trimestre contra os outros meses, nos últimos 24 meses
+  h += `<h2 class="sec">Mercado e ${esc(niFocoNome())}. <span>${esc(niMedNome())}, últimos 13 meses; em negrito, o mês escolhido.</span></h2><div class="card">${niMatriz('Linha', [['Mercado', tot], [esc(niFocoNome()), foco]], J, {valor: true})}` +
+    (salto > 1.15 ? niNotaFiltros(`Nesta categoria, o último mês de cada trimestre (mar, jun, set e dez) vem com cerca de ${n0((salto - 1) * 100)}% mais venda que os outros meses, o padrão de mês de 5 semanas do calendário da Nielsen (a confirmar com o CMI). Compare sempre com o mesmo mês do ano anterior; o share não é afetado.`) : '') + '</div>';
+  const linhas = [[`Share ${esc(niFocoNome())}`, o]]; if (rowsBR) linhas.push(['Share Brasil', niSerie(rowsBR)]);
+  const MK = [...niJogadores(rows, r => r[4]).entries()].filter(([k]) => D.dic.marca[k] !== 'OUTRAS MARCAS').sort((a, b) => niSoma(b[1].c, J.P.tri.a || [J.v]) - niSoma(a[1].c, J.P.tri.a || [J.v])).slice(0, 12);
+  h += `<h2 class="sec">O share mês a mês. <span>${esc(niFocoNome())}, o Brasil e as 12 maiores marcas no mercado do recorte.</span></h2><div class="card">${niMatriz('Linha', linhas.concat(MK.map(([k, oo]) => [niMarca(k), oo])), J)}</div>`;
+  return h;
+}
+
 const PAGINAS = {};   // preenchido junto do render
 const paginaHTML = () => (PAGINAS[S.page] || (() => comAbasMarca(pgMarca(S.page), S.page)))();
 function linhasRecorte() {
   if (MODO === 'ex') return linhasRecorteEx();
   if (MODO === 'mi') return linhasRecorteMi();
+  if (MODO === 'ni') return linhasRecorteNi();
   const L = [['Perna', T('Sell Out', 'Sell In')], ['Página', PAGES.find(p => p[0] === S.page)[1]], ['Mês de corte', ehParcial(S.corte, 2026, 'base') ? `${corteRot()}, acumulado de ${corteTxt()}` : `${mes(S.corte)}/26 (acumulado de ${PARC_PG[S.page] ? emFonte(PARC_PG[S.page], corteTxt) : corteTxt()})`]];
   if (notaParcial()) L.push(['Mês parcial', notaParcial()]);
   FILTROS.forEach(([k, n]) => L.push([n, S.f[k].size ? [...S.f[k]].map(i => dic[k][i]).join(', ') : 'Todos']));
@@ -2901,8 +3343,8 @@ async function exportarExcel(btn) {
     const div = document.createElement('div');
     try { div.innerHTML = paginaHTML(); } finally { Object.keys(S.ui).forEach(k => delete S.ui[k]); Object.assign(S.ui, JSON.parse(ui0)); }
     const nomePg = PAGES.find(p => p[0] === S.page)[1], busca = {'redes-scan': S.ui.scbusca, 'redes-col': S.ui.clbusca, confronto: S.ui.cbusca, 'ex-lojas': S.ui.exbusca, 'mi-lojas': S.ui.mibusca}[S.page];
-    const resumo = [...FILTROS.filter(([k]) => S.f[k].size).map(([k, n]) => `${n}: ${[...S.f[k]].map(i => dic[k][i]).join(', ')}`), ...(busca ? [`Busca: ${busca}`] : [])].join(' · ') || 'Sem recorte';
-    const nota = `${PERNA()} · ${nomePg} · ${MODO === 'ex' ? 'janela ' + exJanela().txt : MODO === 'mi' ? 'mês ' + miJanela().txt : 'corte ' + corteRot()} · ${resumo}`;
+    const resumo = [...FILTROS.filter(([k]) => S.f[k].size).map(([k, n]) => `${n}: ${[...S.f[k]].map(i => (NIM() && k === 'segmento' ? niSegTxt(i) : dic[k][i])).join(', ')}`), ...(busca ? [`Busca: ${busca}`] : [])].join(' · ') || 'Sem recorte';
+    const nota = `${PERNA()} · ${nomePg} · ${MODO === 'ex' ? 'janela ' + exJanela().txt : MODO === 'mi' ? 'mês ' + miJanela().txt : MODO === 'ni' ? niRecSlide() : 'corte ' + corteRot()} · ${resumo}`;
     const abas = [{nome: 'Recorte', titulo: `Governança CTO · ${PERNA()} · ${nomePg}`, nota: 'Recorte marcado no site no momento da exportação.', cab: [['Item', 'Valor']], linhas: linhasRecorte()}];
     if (S.page === 'base' || S.page === 'si-base') {
       const B = linhasBase();
@@ -2924,7 +3366,7 @@ async function exportarExcel(btn) {
     if (abas.length === 1) abas[0].linhas.push(['Observação', 'Esta página não tem tabela; o recorte segue registrado acima.']);
     const blob = await gerarXlsx(abas);
     const a = document.createElement('a'), d0 = new Date(), data = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
-    a.href = URL.createObjectURL(blob); a.download = `Governanca_CTO_${MODO === 'ex' ? 'MSLDireto' : MODO === 'mi' ? 'MSLIndireto' : T('SellOut', 'SellIn')}_${semAcento(nomePg).replace(/[^a-z0-9]+/g, '_')}_${data}.xlsx`;
+    a.href = URL.createObjectURL(blob); a.download = `Governanca_CTO_${MODO === 'ex' ? 'MSLDireto' : MODO === 'mi' ? 'MSLIndireto' : MODO === 'ni' ? 'Nielsen' : T('SellOut', 'SellIn')}_${semAcento(nomePg).replace(/[^a-z0-9]+/g, '_')}_${data}.xlsx`;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     btn.textContent = 'Excel baixado';
   } catch (e) { btn.textContent = 'Não deu para gerar'; console.error(e); }
@@ -2983,9 +3425,9 @@ function recorteSlide() {   // o resumo já sai escapado (tit); soma a busca dig
 }
 function moldeSlide(nomePg, titulo, sub) {
   const s = document.createElement('div'); s.className = 'slide';
-  s.innerHTML = `<div class="s-top"><img src="assets/reckitt_logo.png" alt="Reckitt"><b>Governança CTO</b><span>${PERNA()} · ${esc(nomePg)}</span><span class="s-rec">${recorteSlide()} · ${MODO === 'ex' ? 'janela ' + esc(exJanela().txt) : MODO === 'mi' ? 'mês ' + esc(miJanela().txt) + ' · régua ' + esc(miRegNome()) : 'corte ' + esc(corteRot())}</span></div>
+  s.innerHTML = `<div class="s-top"><img src="assets/reckitt_logo.png" alt="Reckitt"><b>Governança CTO</b><span>${PERNA()} · ${esc(nomePg)}</span><span class="s-rec">${recorteSlide()} · ${MODO === 'ex' ? 'janela ' + esc(exJanela().txt) : MODO === 'mi' ? 'mês ' + esc(miJanela().txt) + ' · régua ' + esc(miRegNome()) : MODO === 'ni' ? esc(niRecSlide()) : 'corte ' + esc(corteRot())}</span></div>
     ${titulo ? `<div class="s-tit"><h2>${esc(titulo)}. <span>${esc(sub)}</span></h2></div>` : ''}<div class="s-corpo"><div class="s-escala"></div></div>
-    <div class="s-pe"><span>${MODO === 'so' && fontesDaPagina().length ? esc(fontesDaPagina().filter(f => !f.congelada).map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : MODO === 'ex' && fontesEx().length ? esc(fontesEx().map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : MODO === 'mi' && fontesMi().length ? esc(fontesMi().map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : `Atualizado em ${esc(D.gerado.split(' ')[0])}`}${MODO === 'si' && D.om ? ` · pedidos de ${omData()}` : ''} · uso interno</span><span class="s-num"></span></div>`;
+    <div class="s-pe"><span>${MODO === 'so' && fontesDaPagina().length ? esc(fontesDaPagina().filter(f => !f.congelada).map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : MODO === 'ex' && fontesEx().length ? esc(fontesEx().map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : MODO === 'mi' && fontesMi().length ? esc(fontesMi().map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : MODO === 'ni' && fontesNi().length ? esc(fontesNi().map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : `Atualizado em ${esc(D.gerado.split(' ')[0])}`}${MODO === 'si' && D.om ? ` · pedidos de ${omData()}` : ''} · uso interno</span><span class="s-num"></span></div>`;
   return s;
 }
 function encaixar(s) {   // mede, aplica a escala e mede de novo (gráfico e tabela mudam de altura quando a largura muda)
@@ -3011,7 +3453,7 @@ function montarSlides() {
   const sc = moldeSlide(nomePg, '', ''); sc.classList.add('capa');
   const h1 = capa ? capa.querySelector('h1') : null;
   sc.querySelector('.s-escala').innerHTML = `<p class="eyebrow">${esc(PERNA())} · ${esc(nomePg)}</p><h1 class="s-h1">${h1 ? h1.innerHTML : esc(nomePg)}</h1>
-    <p class="s-sub">${recorteSlide()} · ${MODO === 'ex' ? `MSL na janela de ${esc(exJanela().txt)}, contra ${esc(exJanela().antTxt)}` : MODO === 'mi' ? `MSL de ${esc(miJanela().txt)}, contra ${esc(miJanela().antTxt)}` : `acumulado de jan a ${esc(corteRot())}`}</p>`;
+    <p class="s-sub">${recorteSlide()} · ${MODO === 'ex' ? `MSL na janela de ${esc(exJanela().txt)}, contra ${esc(exJanela().antTxt)}` : MODO === 'mi' ? `MSL de ${esc(miJanela().txt)}, contra ${esc(miJanela().antTxt)}` : MODO === 'ni' ? esc(niCapaSlide()) : `acumulado de jan a ${esc(corteRot())}`}</p>`;
   const su = capa ? capa.querySelector('.shareuf') : null;   // market share por UF (Redes Scanntech): fica no título, então vai para a capa; a tabela escondida é só do Excel
   if (su) { su.querySelectorAll('.su-xls').forEach(x => x.remove()); const b = limparParaSlide(su); if (b) sc.querySelector('.s-escala').appendChild(b); }
   const prim = grupos.length && !grupos[0].titulo ? grupos.shift() : null;
@@ -3150,6 +3592,7 @@ Object.assign(PAGINAS, {inicio: pgInicio, geral: () => comAbasMarca(pgGeral(), '
   'redes-scan': () => comAbas(pgRedesScan(), 'redes-scan'), 'redes-col': () => comAbas(pgRedesCol(), 'redes-col'), confronto: pgConfronto, depara: pgDepara, base: pgBase,
   'si-inicio': pgSiInicio, 'si-geral': () => comAbasMarca(pgSiGeral(), 'si-geral'), 'si-hn': () => comAbasMarca(pgHN(), 'si-hn'), 'si-diretor': pgDiretor, 'si-clientes': pgSiClientes, 'si-exec': pgSiExec, 'si-q4': pgSiQ4, 'si-mes': pgSiMes, 'si-rv': pgSiRV, 'si-base': pgBase});
 Object.assign(PAGINAS, {'mi-inicio': pgMiInicio, 'mi-dados': pgMiDados, 'mi-diretor': pgMiDiretor, 'mi-redes': pgMiRedes, 'mi-lojas': pgMiLojas, 'mi-executivos': pgMiExecutivos, 'mi-skus': pgMiSkus, 'mi-auditoria': pgMiAuditoria});
+Object.assign(PAGINAS, {'ni-inicio': pgNiInicio, 'ni-categorias': pgNiCategorias, 'ni-segmentos': pgNiSegmentos, 'ni-concorrencia': pgNiConcorrencia, 'ni-canais': pgNiCanais, 'ni-geografia': pgNiGeografia, 'ni-skus': pgNiSkus, 'ni-mes': pgNiMes});
 Object.assign(PAGINAS, {'ex-inicio': pgExInicio, 'ex-dados': pgExDados, 'ex-diretor': pgExDiretor, 'ex-clientes': pgExClientes, 'ex-lojas': pgExLojas, 'ex-executivos': pgExExecutivos, 'ex-skus': pgExSkus});
 lerHash(); filtrar(); gravarHash(); fbar(); render();   // o endereço passa a mostrar só o recorte que foi aplicado
 })();
