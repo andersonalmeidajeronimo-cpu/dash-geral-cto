@@ -3198,7 +3198,8 @@ function pgNiInicio() {
     'Canal e Segmento definem o mercado. Fabricante e Marca trocam o foco: sem eles, o foco é a Reckitt; com eles, o share passa a ser o do fabricante ou da marca marcados (os dois juntos: a marca daquele fabricante).',
     'Em Superfícies, o padrão do site é o mercado sem Desinfetante, segmento praticamente sem marca Reckitt; o botão Categoria inteira inclui o Desinfetante.',
     'O seletor Mês muda o site inteiro. A comparação é sempre contra o mesmo período do ano anterior; no mês e no trimestre, também contra o período anterior. Sanitário, Lava-louças e IQVIA só têm dado a partir de jul/24 ou ago/24.',
-    'Marcas e fabricantes com menos de 0,4% do mercado de 12 meses viram Outras marcas e Outros fabricantes; a Reckitt fica sempre aberta. Lysoform é da SC Johnson e não entra como Reckitt.'].map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
+    'Marcas e fabricantes com menos de 0,4% do mercado de 12 meses viram Outras marcas e Outros fabricantes; a Reckitt fica sempre aberta. Lysoform (SC Johnson) e K-Y não entram como Reckitt.',
+    'Unidades: Superfícies e Alvejantes trazem unidades; as outras categorias trazem o volume, que é sempre unidade (o da IQVIA vem em milhares e o site multiplica por 1.000). Os meses têm 4 ou 5 semanas, conforme o calendário do ano: compare com o mesmo mês do ano anterior.'].map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
   return h;
 }
 function pgNiCategorias() {
@@ -3304,11 +3305,9 @@ function pgNiSkus() {
 function pgNiMes() {
   const J = niJanela(), c = niCat(), g = niGeoEf(), rows = niLinhas(S.niCat, g), rowsBR = g === 'BR' ? null : niLinhas(S.niCat, 'BR'), o = niSerie(rows);
   let h = hero('NIELSEN · MÊS A MÊS', `${esc(c.nome)}.`, `Mercado, ${esc(niFocoNome())} e share mês a mês, ${esc(niNaGeo(g))}.`) + niAvisoGeo() + niOpcBar(false);
-  const tot = {t: o.t, c: o.t}, foco = {t: o.t, c: o.c}, q = [0, 0], nq = [0, 0];
-  for (let i = Math.max(niIni(), J.v - 23); i <= J.v; i++) { const k = +D.meses[i].slice(4) % 3 === 0 ? 0 : 1; q[k] += o.t[i]; nq[k]++; }
-  const salto = nq[0] && nq[1] && q[1] > 0 ? (q[0] / nq[0]) / (q[1] / nq[1]) : NaN;   // fim de trimestre contra os outros meses, nos últimos 24 meses
+  const tot = {t: o.t, c: o.t}, foco = {t: o.t, c: o.c};
   h += `<h2 class="sec">Mercado e ${esc(niFocoNome())}. <span>${esc(niMedNome())}, últimos 13 meses; em negrito, o mês escolhido.</span></h2><div class="card">${niMatriz('Linha', [['Mercado', tot], [esc(niFocoNome()), foco]], J, {valor: true})}` +
-    (salto > 1.15 ? niNotaFiltros(`Nesta categoria, o último mês de cada trimestre (mar, jun, set e dez) vem com cerca de ${n0((salto - 1) * 100)}% mais venda que os outros meses, o padrão de mês de 5 semanas do calendário da Nielsen (a confirmar com o CMI). Compare sempre com o mesmo mês do ano anterior; o share não é afetado.`) : '') + '</div>';
+    niNotaFiltros('Os meses têm 4 ou 5 semanas, conforme o calendário do ano: o mês de 5 semanas soma mais venda que o de 4. Compare com o mesmo mês do ano anterior ou pelo trimestre, e não com o mês anterior; o share não é afetado.') + '</div>';
   const linhas = [[`Share ${esc(niFocoNome())}`, o]]; if (rowsBR) linhas.push(['Share Brasil', niSerie(rowsBR)]);
   const MK = [...niJogadores(rows, r => r[4]).entries()].filter(([k]) => D.dic.marca[k] !== 'OUTRAS MARCAS').sort((a, b) => niSoma(b[1].c, J.P.tri.a || [J.v]) - niSoma(a[1].c, J.P.tri.a || [J.v])).slice(0, 12);
   h += `<h2 class="sec">O share mês a mês. <span>${esc(niFocoNome())}, o Brasil e as 12 maiores marcas no mercado do recorte.</span></h2><div class="card">${niMatriz('Linha', linhas.concat(MK.map(([k, oo]) => [niMarca(k), oo])), J)}</div>`;
