@@ -6,12 +6,26 @@
    MSL Direto: base própria (mês x loja x SKU com Target e Compliance); MSL = soma do Compliance / soma do Target, lido em janela de 3 meses. */
 (() => {
 const DSO = window.DASH, DSI = window.DASH.sellin || null;
+/* Perfil de cliente (base cifrada com perfil = 'cliente'): o mesmo site, recortado só com o dado de um cliente. Nome, textos e a fila do Modo TV vêm da base;
+   este código só esconde as páginas, os filtros e os textos internos. Quem protege o dado é a base do cliente ter apenas o permitido. */
+const CLI = DSO.perfil === 'cliente', CLIENTE = CLI ? (DSO.cliente || {}) : {};
+const PG_CLI = new Set(CLIENTE.paginas || ['inicio', 'geral', 'veja', 'vanish', 'harpic', 'finish', 'hn', 'redes-col', 'redes-scan', 'si-inicio', 'si-geral', 'si-veja', 'si-vanish', 'si-harpic', 'si-finish', 'si-hn',
+  'mi-inicio', 'mi-dados', 'mi-diretor', 'mi-redes', 'mi-lojas', 'mi-skus', 'ni-inicio', 'ni-categorias', 'ni-segmentos', 'ni-concorrencia', 'ni-canais', 'ni-mes']);
+const PG_OK = pg => !CLI || PG_CLI.has(pg);
+const NOME_SITE = () => (CLI ? String(CLIENTE.titulo || CLIENTE.nome || 'Governança') : 'Governança CTO');
+const FORA_CLI = {so: ['recorte', 'uf', 'grp', 'executivo', 'canal', 'fonte'], si: ['grp', 'recorte', 'executivo', 'canal'], mi: ['dist', 'executivo'], ni: [], ex: []};   // filtros que só servem à regional
+const ROT_CLI = {'mi-redes': 'Redes', 'redes-col': 'Lojas e redes', 'redes-scan': 'Share de mercado'};
+const filtrosVis = (L, m) => (CLI ? L.filter(([k]) => !FORA_CLI[m].includes(k)).map(([k, n]) => [k, (CLIENTE.rotulos || {})[k] || n]) : L);
+const pagsVis = L => (CLI ? L.filter(([pg]) => PG_OK(pg)).map(([pg, n]) => [pg, ROT_CLI[pg] || n]) : L);
+const NR = () => (CLI ? 'R$' : 'NR');   // Sell In: o cliente vê o R$ faturado (nota sem impostos), nunca o NR
+const NI_GEO0 = () => (CLI && CLIENTE.geo) || 'CTO';   // geografia inicial da perna Nielsen
+const TV = {on: false, fila: [], i: 0, fase: 'topo', t0: 0, tq: 0, y: 0, raf: 0, ult: 0, wd: 0, wake: null, desde: 0, pausa: false, mx: 0};   // Modo TV (perfil de cliente), motor no fim do arquivo
 const DEX = (() => { try { return montarDEX(window.DASH.execucao); } catch (e) { console.warn('MSL Direto fora do site: base fora do formato.', e); return null; } })();
 const DNI = (() => { try { return montarDNI(window.DASH.nielsen); } catch (e) { console.warn('Nielsen fora do site: base fora do formato.', e); return null; } })();   // perna Nielsen: base própria (cubo de mercado), só existe quando o arquivo cifrado traz a base
 const DMI = (() => { try { return montarDMI(window.DASH.msl_indireto); } catch (e) { console.warn('MSL Indireto fora do site: base fora do formato.', e); return null; } })();   // perna MSL Indireto: mesma regra, base própria (lojas do canal indireto)   // perna MSL Direto: só existe quando o arquivo cifrado traz a base de MSL; base quebrada não derruba as outras pernas
 let MODO = 'so', D = DSO;
 const T = (so, si) => (MODO === 'si' ? si : so);   // texto conforme a perna
-const PERNA = () => ({si: 'Sell In', ex: 'MSL Direto', mi: 'MSL Indireto', ni: 'Nielsen'}[MODO] || 'Sell Out');
+const PERNA = () => ({si: 'Sell In', ex: 'MSL Direto', mi: CLI ? 'MSL' : 'MSL Indireto', ni: 'Nielsen'}[MODO] || 'Sell Out');
 const EXM = () => MODO === 'ex' || MODO === 'mi';   // as duas pernas de MSL usam o mesmo motor (Target e Compliance)
 const COL = {recorte:2, uf:3, grp:4, executivo:5, canal:6, fonte:7, janela:8, nivel:9, marca:10, segmento:11};
 const RS = 12, CX = 13, PDV = 14, ANO0 = 2023;
@@ -38,6 +52,7 @@ const PAGES_SI = [
   ['si-inicio','Início'], ['si-geral','Dados gerais'], ['si-veja','Veja'], ['si-vanish','Vanish'], ['si-harpic','Harpic'], ['si-finish','Finish'],
   ['si-hn','H&N'], ['si-diretor','Visão do Diretor'], ['si-clientes','Clientes'], ['si-exec','Executivos'], ['si-q4','Plano Q4'], ['si-mes','Mês em curso'], ['si-rv','RV'], ['si-base','Base geral']];
 /* linha das visões: as mesmas nas duas pernas; Plano Q4, Mês em curso e RV são do sell in (levam para a perna Sell In) */
+const NAV_CLI = [['Início', 'inicio', 'si-inicio'], ['Dados gerais', 'geral', 'si-geral'], ['Lojas e redes', 'redes-col', null], ['Share de mercado', 'redes-scan', null]];   // perfil de cliente
 const NAV = [['Início', 'inicio', 'si-inicio'], ['Dados gerais', 'geral', 'si-geral'], ['Visão do Diretor', 'diretor', 'si-diretor'], ['Clientes', 'clientes', 'si-clientes'],
   ['Executivos', 'executivos', 'si-exec'], ['Plano Q4', null, 'si-q4'], ['Mês em curso', null, 'si-mes'], ['RV', null, 'si-rv']];
 const PAI = {veja: 'geral', vanish: 'geral', harpic: 'geral', finish: 'geral', hn: 'geral', 'si-veja': 'si-geral', 'si-vanish': 'si-geral', 'si-harpic': 'si-geral', 'si-finish': 'si-geral', 'si-hn': 'si-geral',
@@ -45,7 +60,7 @@ const PAI = {veja: 'geral', vanish: 'geral', harpic: 'geral', finish: 'geral', h
 const TODAS_PAGES = [...PAGES_SO, ...PAGES_SI];
 const S = {page: 'inicio', f: {}, corte: DSO.corte, ui: {}, uiSO: {}, uiSI: {}, fSO: {}, fSI: {}, corteSO: DSO.corte, corteSI: DSI ? DSI.corte : DSO.corte,
   uiEX: {}, fEX: {}, corteEX: DEX ? DEX.corte : DSO.corte, uiMI: {}, fMI: {}, corteMI: DMI ? DMI.corte : DSO.corte,
-  uiNI: {}, fNI: {}, corteNI: DNI ? DNI.corte : DSO.corte, niCat: 0, niGeo: 'CTO', niMed: 0, niMk: 'padrao'};
+  uiNI: {}, fNI: {}, corteNI: DNI ? DNI.corte : DSO.corte, niCat: 0, niGeo: NI_GEO0(), niMed: 0, niMk: 'padrao'};
 FILTROS_SO.forEach(([k]) => { S.fSO[k] = new Set(); S.fSI[k] = new Set(); });
 FILTROS_EX.forEach(([k]) => { S.fEX[k] = new Set(); });
 FILTROS_MI.forEach(([k]) => { S.fMI[k] = new Set(); });
@@ -58,11 +73,11 @@ function aplicarModo(m) {   // troca a perna: dados, dicionário, medidas, filtr
   if (MODO === m && NIV) return;
   if (NIV) { if (MODO === 'si') S.corteSI = S.corte; else if (MODO === 'ex') S.corteEX = S.corte; else if (MODO === 'mi') S.corteMI = S.corte; else if (MODO === 'ni') S.corteNI = S.corte; else S.corteSO = S.corte; }
   if (m === 'mi') {   // MSL Indireto: o mesmo motor do MSL Direto sobre a base do canal indireto (lojas da lista oficial, sell out do Colecta)
-    MODO = m; D = DMI; dic = D.dic; FILTROS = FILTROS_MI; PAGES = PAGES_MI; S.f = S.fMI; S.ui = S.uiMI; S.corte = S.corteMI;
+    MODO = m; D = DMI; dic = D.dic; FILTROS = filtrosVis(FILTROS_MI, 'mi'); PAGES = pagsVis(PAGES_MI); S.f = S.fMI; S.ui = S.uiMI; S.corte = S.corteMI;
     return;
   }
   if (m === 'ni') {   // Nielsen: cubo de mercado próprio; categoria, geografia e medida são seletores únicos
-    MODO = m; D = DNI; dic = D.dic; FILTROS = FILTROS_NI; PAGES = PAGES_NI; S.f = S.fNI; S.ui = S.uiNI; S.corte = S.corteNI;
+    MODO = m; D = DNI; dic = D.dic; FILTROS = filtrosVis(FILTROS_NI, 'ni'); PAGES = pagsVis(PAGES_NI); S.f = S.fNI; S.ui = S.uiNI; S.corte = S.corteNI;
     return;
   }
   if (m === 'ex') {   // MSL Direto: base própria; as medidas, níveis e anos das outras pernas não se aplicam (o mês de corte vira o mês vigente, em AAAAMM)
@@ -73,13 +88,13 @@ function aplicarModo(m) {   // troca a perna: dados, dicionário, medidas, filtr
   NIV = {TOTAL: id('nivel','TOTAL'), MARCA: id('nivel','MARCA'), SEG: id('nivel','SEGMENTO')};
   TODAS = id('marca','(TODAS AS MARCAS)'); TODOS = id('segmento','(TODOS OS SEGMENTOS)');
   MED = m === 'si'
-    ? {rs: {col: RS, nome: 'NR R$', curto: 'NR', media: false}, cx: {col: CX, nome: 'Caixas', curto: 'Caixas', media: false}}
+    ? {rs: {col: RS, nome: CLI ? 'R$ faturado' : 'NR R$', curto: NR(), media: false}, cx: {col: CX, nome: 'Caixas', curto: 'Caixas', media: false}}
     : {rs: {col: RS, nome: 'Sell out R$', curto: 'R$', media: false}, cx: {col: CX, nome: 'Caixas', curto: 'Caixas', media: false},
        pdv: {col: PDV, nome: 'PDVs positivados', curto: 'PDVs', media: true}};
   MEDS = Object.keys(MED);
   ANOS = m === 'si' ? [2024, 2025, 2026] : [2023, 2024, 2025, 2026];
-  FILTROS = m === 'si' ? FILTROS_SI : FILTROS_SO;
-  PAGES = m === 'si' ? PAGES_SI : PAGES_SO;
+  FILTROS = filtrosVis(m === 'si' ? FILTROS_SI : FILTROS_SO, m);
+  PAGES = pagsVis(m === 'si' ? PAGES_SI : PAGES_SO);
   MARCA_PAG = m === 'si' ? {'si-veja': ['VEJA'], 'si-vanish': ['VANISH'], 'si-harpic': ['HARPIC'], 'si-finish': ['FINISH']}
                          : {veja: ['VEJA'], vanish: ['VANISH'], harpic: ['HARPIC'], finish: ['FINISH']};
   HN = m === 'si'
@@ -93,6 +108,10 @@ function aplicarModo(m) {   // troca a perna: dados, dicionário, medidas, filtr
 aplicarModo('so');
 const modoDaPagina = pg => (String(pg).startsWith('si-') ? 'si' : String(pg).startsWith('ex-') ? 'ex' : String(pg).startsWith('mi-') ? 'mi' : String(pg).startsWith('ni-') ? 'ni' : 'so');
 const INICIO = () => ({si: 'si-inicio', ex: 'ex-inicio', mi: 'mi-inicio', ni: 'ni-inicio'}[MODO] || 'inicio');
+function padraoCliente(explicito) {   // perfil de cliente: a Comparação abre marcada com os meses que existem nos dois anos (o mês sem venda no ano anterior fica fora do acumulado)
+  S.cliSO = true; if (explicito) return;
+  Object.entries(CLIENTE.padrao || {}).forEach(([k, vs]) => { if (!S.fSO[k] || !Array.isArray(vs) || !DSO.dic[k]) return; vs.forEach(x => { const i = DSO.dic[k].indexOf(x); if (i >= 0) S.fSO[k].add(i); }); });
+}
 
 /* ---------- estado ----------
    Site (GitHub): o recorte fica no endereço da página, então o link já abre filtrado.
@@ -117,7 +136,7 @@ function lerHash() {
   FILTROS.forEach(([k]) => S.f[k].clear());
   S.corte = D.corte;
   let rg = MODO === 'mi' ? (D.RG[D.regra.padrao] ? D.regra.padrao : D.RGL[0][0]) : null;   // MSL Indireto: a régua vem do link (sem ela, a oficial)
-  if (MODO === 'ni') { S.niCat = 0; S.niGeo = 'CTO'; S.niMed = 0; S.niMk = 'padrao'; }   // Nielsen: categoria, geografia, medida e mercado vêm do link
+  if (MODO === 'ni') { S.niCat = 0; S.niGeo = NI_GEO0(); S.niMed = 0; S.niMk = 'padrao'; }   // Nielsen: categoria, geografia, medida e mercado vêm do link
   qs.forEach(q => {
     const i = q.indexOf('='); if (i < 0) return;
     const k = q.slice(0, i), v = q.slice(i + 1);
@@ -127,9 +146,10 @@ function lerHash() {
     else if (MODO === 'ni' && k === 'geo') { if (D.dic.geo.includes(v)) S.niGeo = v; }
     else if (MODO === 'ni' && k === 'med') S.niMed = v === '1' ? 1 : 0;
     else if (MODO === 'ni' && k === 'mk') S.niMk = v === 'total' ? 'total' : 'padrao';
-    else if (S.f[k] && v) v.split('|').forEach(x => { const i = id(k, x); if (i >= 0) S.f[k].add(i); });
+    else if (S.f[k] && v && FILTROS.some(f => f[0] === k)) v.split('|').forEach(x => { const i = id(k, x); if (i >= 0) S.f[k].add(i); });   // filtro que a perna não mostra não entra pelo link
   });
   if (rg) { D.reg = rg; D.col.c = D.RG[rg].c; D.col.r = D.RG[rg].r; }
+  if (CLI && MODO === 'so') padraoCliente(qs.some(q => q.startsWith('janela=')));
 }
 function gravarHash(novaEntrada = false) {
   if (ART) {
@@ -138,8 +158,9 @@ function gravarHash(novaEntrada = false) {
     return;
   }
   const p = [S.page];
-  if (MODO === 'ni') { if (S.niCat) p.push('cat=' + D.cats[S.niCat].cod); if (S.niGeo !== 'CTO') p.push('geo=' + S.niGeo); if (S.niMed === 1) p.push('med=1'); if (S.niMk === 'total') p.push('mk=total'); }
+  if (MODO === 'ni') { if (S.niCat) p.push('cat=' + D.cats[S.niCat].cod); if (S.niGeo !== NI_GEO0()) p.push('geo=' + S.niGeo); if (S.niMed === 1) p.push('med=1'); if (S.niMk === 'total') p.push('mk=total'); }
   FILTROS.forEach(([k]) => { if (S.f[k].size) p.push(k + '=' + [...S.f[k]].map(i => dic[k][i]).join('|')); });
+  if (CLI && MODO === 'so' && S.f.janela && !S.f.janela.size) p.push('janela=todas');   // o cliente tirou a Comparação padrão: o link guarda a escolha
   if (S.corte !== D.corte) p.push('corte=' + S.corte);
   if (MODO === 'mi' && D.reg !== (D.regra.padrao || D.RGL[0][0])) p.push('reg=' + D.reg);
   const url = '#' + p.map(encodeURIComponent).join('&').replace(/%3D/g, '=');
@@ -212,6 +233,7 @@ const subHyg = sub => { const hy = dic.uf.indexOf('Hygiene'); return sub ? r => 
 const temPlano = pa => !!pa && Q4M.some(m => v(pa, 2026, m) > 0);
 const v = (a, ano, m) => a[(ano - ANO0) * 12 + m - 1];
 function agg(a, ano, meses, media) {
+  if (CLI && MODO === 'si' && ano < ((DSI && DSI.desde) || 0)) return NaN;   // cliente: antes do 1º ano completo de compras não há acumulado para comparar (o mês a mês segue)
   let s = 0, n = 0;
   for (const m of meses) { const x = v(a, ano, m); if (!isNaN(x)) { s += x; n++; } }
   return n ? (media ? s / n : s) : NaN;
@@ -353,10 +375,11 @@ function kpis(opts, extra = true) {
   if (MODO === 'si') {   // Sell In: NR, caixas, NR por caixa e clientes com compra
     const r = um('rs', opts), c = um('cx', opts), r26 = ytd(r, 2026, 'rs'), r25 = ytd(r, 2025, 'rs'), c26 = ytd(c, 2026, 'cx'), c25 = ytd(c, 2025, 'cx');
     const G = cubo('rs', {...opts, chave: x => x[COL.grp]}), cli = y => [...G.values()].filter(a => agg(a, y, ate(S.corte), false) > 0).length;
-    return `<div class="grid g4">` + card('NR ' + corteTxt(), mi(r26), varr(r26, r25), `sobre ${mi(r25)} em 2025`) +
-      card('Caixas ' + corteTxt(), n0(c26), varr(c26, c25), `sobre ${n0(c25)} em 2025`) +
-      card('NR por caixa', 'R$ ' + n2(r26 / c26), varr(r26 / c26, r25 / c25), `contra R$ ${n2(r25 / c25)} em 2025`) +
-      card('Clientes com compra', n0(cli(2026)), varr(cli(2026), cli(2025)), `contra ${n0(cli(2025))} em 2025`) + '</div>';
+    const sem = 'sem o mesmo período de 2025';
+    return `<div class="grid ${CLI ? 'g3' : 'g4'}">` + card((CLI ? 'R$ faturado ' : 'NR ') + corteTxt(), mi(r26), varr(r26, r25), isFinite(r25) ? `sobre ${mi(r25)} em 2025` : sem) +
+      card('Caixas ' + corteTxt(), n0(c26), varr(c26, c25), isFinite(c25) ? `sobre ${n0(c25)} em 2025` : sem) +
+      card(NR() + ' por caixa', 'R$ ' + n2(r26 / c26), varr(r26 / c26, r25 / c25), isFinite(r25 / c25) ? `contra R$ ${n2(r25 / c25)} em 2025` : sem) +
+      (CLI ? '' : card('Clientes com compra', n0(cli(2026)), varr(cli(2026), cli(2025)), `contra ${n0(cli(2025))} em 2025`)) + '</div>';
   }
   const r = um('rs', opts), c = um('cx', opts), p = um('pdv', opts);
   const r26 = ytd(r, 2026, 'rs'), r25 = ytd(r, 2025, 'rs'), p26 = ytd(p, 2026, 'pdv'), p25 = ytd(p, 2025, 'pdv');
@@ -394,7 +417,7 @@ function tabelaYTD(rotulo, itens, chaveFn, opts, porMarca = false) {
     (comPl ? `<td class="b pl">${n0(l.q4[0])}</td><td>${n0(l.q4[1])}</td><td>${vc(varr(l.q4[0], l.q4[1]))}</td>` : '') + '</tr>';
   const temExtra = itens.length && itens[0][2] !== undefined;
   const vs = j => `${String(A[j + 1]).slice(2)} vs ${String(A[j]).slice(2)}`;
-  return `<div class="tw"><table><thead><tr><th class="l">${rotulo}</th>${temExtra ? `<th class="l">${T('UF', 'Canal')}</th>` : ''}${A.map(y => `<th>${T('R$', 'NR')} ${y}</th>`).join('')}
+  return `<div class="tw"><table><thead><tr><th class="l">${rotulo}</th>${temExtra ? `<th class="l">${T('UF', 'Canal')}</th>` : ''}${A.map(y => `<th>${T('R$', NR())} ${y}</th>`).join('')}
     ${A.slice(1).map((_, j) => `<th>${vs(j)}</th>`).join('')}<th>Peso 26</th><th>${T('PDVs', 'Caixas')} 25</th><th>${T('PDVs', 'Caixas')} 26</th><th>Var.</th>
     ${comPl ? '<th>Plano Q4</th><th>Q4 2025</th><th>Plano vs Q4/25</th>' : ''}</tr></thead><tbody>
     ${linhas.map(l => row(l)).join('')}${row({nome: 'Total', extra: temExtra ? '' : undefined, y: tot, pp: tp, q4: [soma(l => l.q4[0]), soma(l => l.q4[1])]}, 'tot')}</tbody></table></div>`;
@@ -422,7 +445,7 @@ function validade() {
   return {velho, parcial: !!p, txt: `Sell out até ${mes(D.ult26)}/26${p ? ` · parcial até ${p.ate}` : ''}${co && co.extraido ? ` · Colecta de ${co.extraido.slice(0, 5)}` : ''}${falta}`};
 }
 const seloValidade = () => { const x = validade(); if (!x) return ''; const c = x.velho ? 'warn' : x.parcial ? 'parc' : 'ok';
-  return `<span class="selo ${c}" title="${{warn: 'Dado desatualizado: veja o lembrete da Governança CTO', parc: 'Meses fechados em dia; o mês em curso entra parcial e ainda cresce até o fechamento', ok: 'Dado em dia'}[c]}">${esc(x.txt)}</span>`; };
+  return `<span class="selo ${c}" title="${{warn: CLI ? 'Dado desatualizado: a próxima atualização traz o mês' : 'Dado desatualizado: veja o lembrete da Governança CTO', parc: 'Meses fechados em dia; o mês em curso entra parcial e ainda cresce até o fechamento', ok: 'Dado em dia'}[c]}">${esc(x.txt)}</span>`; };
 
 /* ---------- data de cada fonte do Sell Out: quando foi extraída e até quando vai o dado (textos e datas vêm do arquivo cifrado) ---------- */
 const FONTES_PG = {'redes-scan': ['scanntech', 'scanntech_marcas', 'scanntech_share_uf', 'redes_colecta'], 'redes-col': ['redes_colecta', 'colecta_marcas', 'scanntech']};
@@ -491,14 +514,15 @@ function notaParcial(k) {
 function nav() {
   const topo = document.getElementById('topo');
   const ini = INICIO();
-  if (topo) topo.innerHTML = `<div class="topo-in"><a class="topo-tit" href="#${ini}" data-act="pg" data-pg="${ini}"><h1>Governança CTO</h1></a>
+  if (topo) topo.innerHTML = `<div class="topo-in"><a class="topo-tit" href="#${ini}" data-act="pg" data-pg="${ini}"><h1>${esc(NOME_SITE())}</h1></a>
     <div class="topo-meio">${seloValidade()}<span>${MODO === 'so' ? esc(topoFontes()) : MODO === 'ex' ? esc(topoEx()) : MODO === 'mi' ? esc(topoMi()) : MODO === 'ni' ? esc(topoNi()) : `Atualizado em ${D.gerado.split(' ')[0]} · Sell In`}</span>${window.DASH_COFRE ? '<a href="#sair" data-act="sair" title="Fechar o acesso neste aparelho">Sair</a>' : ''}</div>
     <div class="topo-logo"><img src="assets/reckitt_logo.png" alt="Reckitt"></div></div>`;
-  const atual = PAI[S.page] || S.page;
-  document.getElementById('gnav').innerHTML = '<div class="nav-rol">' + (EXM() || NIM() ? PAGES.map(([pg, n]) => `<a class="nav ${atual === pg ? 'on' : ''}" href="#${pg}" data-act="pg" data-pg="${pg}">${n}</a>`).join('') : NAV.filter(([, so, si]) => (MODO === 'si' ? si : so || (DSI && si))).map(([n, so, si]) => {
+  const atual = CLI && ROT_CLI[S.page] ? S.page : PAI[S.page] || S.page;
+  const navL = CLI ? NAV_CLI.filter(([, so, si]) => (MODO === 'si' ? si : so) && (so !== 'redes-col' || RD) && (so !== 'redes-scan' || shareUF())) : NAV.filter(([, so, si]) => (MODO === 'si' ? si : so || (DSI && si)));
+  document.getElementById('gnav').innerHTML = '<div class="nav-rol">' + (EXM() || NIM() ? PAGES.map(([pg, n]) => `<a class="nav ${atual === pg ? 'on' : ''}" href="#${pg}" data-act="pg" data-pg="${pg}">${n}</a>`).join('') : navL.map(([n, so, si]) => {
     const alvo = MODO === 'si' ? si : (so || si), on = atual === so || atual === si;
     return `<a class="nav ${on ? 'on' : ''} ${n === 'RV' ? 'rv' : ''}" href="#${alvo}" data-act="pg" data-pg="${alvo}">${n}</a>`;
-  }).join('')) + `</div><span class="acoes"><button class="btn-top" data-act="apres" title="Abre a página aberta como slides, no recorte marcado"><span class="lg">Modo Apresentação</span><span class="sm">Slides</span></button>
+  }).join('')) + `</div><span class="acoes">${CLI ? '<button class="btn-top" data-act="apres" title="Passa as páginas sozinho, rolando devagar: para deixar numa TV"><span class="lg">Modo TV</span><span class="sm">TV</span></button>' : '<button class="btn-top" data-act="apres" title="Abre a página aberta como slides, no recorte marcado"><span class="lg">Modo Apresentação</span><span class="sm">Slides</span></button>'}
     <button class="btn-top" data-act="pdf" title="Gera a apresentação em PDF da página aberta, no recorte marcado">⤓ PDF</button>
     <button class="btn-top" data-act="excel" title="Baixa um Excel com as tabelas desta página, no recorte marcado">⤓ Excel</button></span>`;
 }
@@ -518,7 +542,7 @@ function opcoes(k) {
 function fbar() {
   const ativo = FILTROS.some(([k]) => S.f[k].size);
   document.getElementById('fbar').innerHTML = (EXM() ? exSeletorMes() + (MODO === 'mi' && D.RGL.length > 1 ? `<label class="cut">Régua <select data-act="mireg" title="Muda a régua do MSL no site inteiro">${D.RGL.map(([k, n]) => `<option value="${esc(k)}" ${k === D.reg ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>` : '') : NIM() ? niBarra() : `<label class="cut">Mês de corte <select data-act="corte">${ate(D.ult26).map(m => `<option value="${m}" ${m === S.corte ? 'selected' : ''}>${mes(m)}/26${parcialDe('base') && parcialDe('base').mes === m ? ' (parcial)' : ''}</option>`).join('')}</select></label>`) +
-    (DSI || DEX || DMI || DNI ? `<span class="modo" role="tablist" aria-label="Perna"><button data-act="modo" data-m="so" class="${MODO === 'so' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'so'}">Sell Out</button>${DSI ? `<button data-act="modo" data-m="si" class="${MODO === 'si' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'si'}">Sell In</button>` : ''}${DEX ? `<button data-act="modo" data-m="ex" class="${MODO === 'ex' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'ex'}">MSL Direto</button>` : ''}${DMI ? `<button data-act="modo" data-m="mi" class="${MODO === 'mi' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'mi'}">MSL Indireto</button>` : ''}${DNI ? `<button data-act="modo" data-m="ni" class="${MODO === 'ni' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'ni'}">Nielsen</button>` : ''}</span>` : '') +
+    (DSI || DEX || DMI || DNI ? `<span class="modo" role="tablist" aria-label="Perna"><button data-act="modo" data-m="so" class="${MODO === 'so' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'so'}">Sell Out</button>${DSI ? `<button data-act="modo" data-m="si" class="${MODO === 'si' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'si'}">Sell In</button>` : ''}${DEX ? `<button data-act="modo" data-m="ex" class="${MODO === 'ex' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'ex'}">MSL Direto</button>` : ''}${DMI ? `<button data-act="modo" data-m="mi" class="${MODO === 'mi' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'mi'}">${CLI ? 'MSL' : 'MSL Indireto'}</button>` : ''}${DNI ? `<button data-act="modo" data-m="ni" class="${MODO === 'ni' ? 'on' : ''}" role="tab" aria-selected="${MODO === 'ni'}">Nielsen</button>` : ''}</span>` : '') +
     FILTROS.map(([k, n]) => {
       const st = S.f[k];
       const txt = st.size === 1 ? nomeFiltro(k, [...st][0]) : n;
@@ -527,7 +551,7 @@ function fbar() {
   // faixa "Filtros:": cada seleção vira uma etiqueta que sai com um clique
   const tags = FILTROS.flatMap(([k, n]) => [...S.f[k]].map(i => `<button class="ftag" data-act="rmf" data-k="${k}" data-i="${i}" title="Tirar este filtro">${n}: ${nomeFiltro(k, i)} <span aria-hidden="true">×</span></button>`));
   const fs = document.getElementById('fsel');
-  if (fs) fs.innerHTML = `<span class="fsel-lab">Filtros:</span><div class="fsel-box">${tags.join('') || '<span class="vazio">Nenhum filtro: visão completa da regional.</span>'}</div>
+  if (fs) fs.innerHTML = `<span class="fsel-lab">Filtros:</span><div class="fsel-box">${tags.join('') || `<span class="vazio">Nenhum filtro: visão completa${CLI ? '' : ' da regional'}.</span>`}</div>
     <button class="chip clear" data-act="limpar" ${ativo ? '' : 'disabled'}>Limpar</button>`;
 }
 const nomeFiltro = (k, i) => (NIM() && k === 'segmento' ? esc(niSegTxt(i)) : NIM() && k === 'canal' ? niCanal(i) : !EXM() && (k === 'grp' || k === 'executivo') ? tit(dic[k][i]) : esc(dic[k][i]));   // Execução: nomes como no PBI
@@ -566,7 +590,7 @@ document.addEventListener('click', e => {
   if (act === 'pop') { if (POP && POP.k === t.dataset.k) fecharPop(); else abrirPop(t.dataset.k, t); }
   else if (act === 'limpar') { FILTROS.forEach(([k]) => S.f[k].clear()); atualizar(); }
   else if (act === 'rmf') { const k = t.dataset.k; S.f[k].delete(+t.dataset.i); if (k === 'marca') { const ok = new Set(opcoes('segmento')); S.f.segmento.forEach(x => { if (!ok.has(x)) S.f.segmento.delete(x); }); } atualizar(); }
-  else if (act === 'apres') abrirApresentacao();
+  else if (act === 'apres') { if (CLI) abrirTV(true); else abrirApresentacao(); }   // perfil de cliente: Modo TV no lugar dos slides
   else if (act === 'pdf') gerarPDF(t);
   else if (act === 'med') { S.ui['m' + t.dataset.bid] = t.dataset.m; document.getElementById('b-' + t.dataset.bid).innerHTML = blocoIn(t.dataset.bid); }
   else if (act === 'ui') {
@@ -580,7 +604,7 @@ document.addEventListener('click', e => {
   else if (act === 'exir') { e.preventDefault(); S.ui[t.dataset.k] = t.dataset.v; irPara(t.dataset.pg); exRolarDet(t.dataset.k, t.dataset.v); }   // Execução: abre outra página já com a aba ou o item escolhido
   else if (act === 'excel') exportarExcel(t);
   else if (act === 'csv') baixarCSV(t);
-  else if (act === 'sair') { e.preventDefault(); try { localStorage.removeItem('dash-geral-cto-chave'); } catch (x) { /* nada guardado */ } location.replace(location.pathname); }
+  else if (act === 'sair') { e.preventDefault(); try { localStorage.removeItem('dash-geral-cto-chave'); localStorage.removeItem('governanca-cliente-chave'); } catch (x) { /* nada guardado */ } location.replace(location.pathname); }
   else if (act === 'pag') { const np = Math.max(1, Math.ceil(linhasBase().length / 50)); S.ui.pag = Math.min(np - 1, Math.max(0, (S.ui.pag || 0) + +t.dataset.d)); render(false); }
   else if (act === 'sort') { const k = 'sort' + t.dataset.t; S.ui[k] = S.ui[k] === t.dataset.c ? '-' + t.dataset.c : t.dataset.c; render(false); }
 });
@@ -594,10 +618,12 @@ document.addEventListener('change', e => {
   }
   if (e.target.dataset.act === 'mireg' && MODO === 'mi' && D.RG[e.target.value]) { D.reg = e.target.value; D.col.c = D.RG[D.reg].c; D.col.r = D.RG[D.reg].r; atualizar(); }   // atualizar grava a régua no link
 });
+function trocaModo(m) { aplicarModo(m); if (CLI && MODO === 'so' && !S.cliSO) padraoCliente(false); filtrar(); fbar(); }
 function irPara(pg) {
   fecharPop();
+  if (!PG_OK(pg)) pg = {si: 'si-inicio', ex: 'ex-inicio', mi: 'mi-inicio', ni: 'ni-inicio'}[modoDaPagina(pg)] || 'inicio';   // página interna: no perfil de cliente, o início da perna
   const mudou = pg !== S.page, m = modoDaPagina(pg);
-  if (m !== MODO) { aplicarModo(m); filtrar(); fbar(); }
+  if (m !== MODO) trocaModo(m);
   S.page = pg; S.ui.pag = 0; gravarHash(mudou); render(); scrollTo({top: 0});
 }
 function atualizar(manterPop) {
@@ -607,7 +633,7 @@ function atualizar(manterPop) {
 // voltar/avançar do navegador e links colados: relê o endereço
 var ULTIMO = location.hash;
 function doEndereco() {
-  if (ART || location.hash === ULTIMO) return;
+  if (ART || TV.on || location.hash === ULTIMO) return;
   ULTIMO = location.hash; const antes = S.page; fecharPop(); if (APRES) fecharApresentacao();
   lerHash(); filtrar(); gravarHash(); fbar(); render(); if (S.page !== antes) scrollTo({top: 0});
 }
@@ -624,15 +650,26 @@ function hero(eyebrow, t1, t2, side = '', sub = '') {   // sub: frase descritiva
 const recorteResumo = () => FILTROS.filter(([k]) => S.f[k].size).map(([k, n]) => `${n}: ${[...S.f[k]].map(i => (NIM() ? nomeFiltro(k, i) : EXM() ? esc(dic[k][i]) : tit(dic[k][i]))).join(', ')}`).join(' · ');
 function recorteTxt() { return ''; }   // o recorte aparece na faixa "Filtros:" do topo, nos slides e no Excel
 
+const IDX_CLI = {geral: 'Total: R$, caixas e PDVs mês a mês, ticket, R$ por caixa e marca a marca.',
+  'redes-col': 'As lojas e redes que compram, agrupadas pela raiz do CNPJ: quem cresce, quem cai e as marcas de cada uma.',
+  'redes-scan': 'Share oficial da Reckitt no estado (Scanntech), mês a mês, contra o ano anterior.',
+  'si-geral': 'Total: R$ faturado e caixas mês a mês, R$ por caixa, marca a marca e BU.', 'si-veja': 'Visão marca e segmentos.',
+  'si-hn': 'Jontex e Olla, Sustagen, Veet e as outras marcas de Health.',
+  'mi-dados': 'Mês, trimestre e ano, e as abas Perfil, Tipo de loja, Marca, Segmento e Lista, com o mês a mês.',
+  'mi-diretor': 'Os números do mês, as redes e lojas que mais puxam o MSL para baixo e as faltas que mais pesam.',
+  'mi-redes': 'MSL por rede; ao abrir, as lojas da rede e a matriz marca x mês.',
+  'mi-lojas': 'Todas as lojas da lista, com busca, faixa, faltas, em risco e quanto cada loja compra.',
+  'mi-skus': 'Os SKUs do mix que mais faltam, marca a marca, e as lojas onde cada um falta.'};
+const idxCli = IDX => (CLI ? IDX.filter(([pg]) => PG_OK(pg) && (pg !== 'redes-scan' || shareUF())).map(([pg, n, d]) => [pg, ROT_CLI[pg] || n, ((CLIENTE.indice || {})[pg]) || IDX_CLI[pg] || d]) : IDX);
 function pgInicio() {
   const op = {marcas: gMarcas(), segs: gSegs()};
   const side = `<div class="side">${(D.equipe || []).map(([cargo, nome]) => `${esc(cargo)} <span class="lk">${esc(nome)}</span>`).join('<br>')}<br>Corte ${corteRot()} · ${n0(D.rows.length)} linhas na base</div>`;
-  let h = hero('', 'Governança CTO.', 'Sell out do Centro-Oeste, mês a mês.', side);
+  let h = hero('', esc(NOME_SITE()) + '.', CLI ? esc(CLIENTE.sub_so || '') : 'Sell out do Centro-Oeste, mês a mês.', side);
   // linha de marcas
   const pn = [['geral', 'Total', null], ...['VEJA','VANISH','HARPIC','FINISH'].map(m => [m.toLowerCase(), tit(m), [m]]), ['hn', 'H&N', ['SUSTAGEN','JONTEX','OLLA','VEET']]];
   h += '<div class="pnav">' + pn.map(([pg, nome, mk]) => {
     const a = um('rs', {marcas: mk ? marcasDe(mk) : op.marcas, segs: op.segs}); const d = varr(ytd(a, 2026, 'rs'), ytd(a, 2025, 'rs'));
-    return `<a href="#${pg}" data-act="pg" data-pg="${pg}"><div class="mk ${mkCls(mk && mk[0])}">${nome}</div><div class="v">${mi(ytd(a, 2026, 'rs'))} · ${vc(d)}</div></a>`;
+    return `<a href="#${pg}" data-act="pg" data-pg="${pg}"><div class="mk ${mkCls(mk && mk[0])}">${nome}</div><div class="v">${mi(ytd(a, 2026, 'rs'))}${CLI && !isFinite(d) ? '' : ' · ' + vc(d)}</div></a>`;
   }).join('') + '</div>';
   h += recorteTxt();
   h += `<h2 class="sec">O ano em números. <span>Acumulado de ${corteTxt()} contra o mesmo período de 2025.</span></h2>` + kpis(op);
@@ -644,12 +681,12 @@ function pgInicio() {
     const y26 = ytd(a, 2026, 'rs'), y25 = ytd(a, 2025, 'rs');
     const pg = MARCA_PAG[m.toLowerCase()] ? m.toLowerCase() : 'hn';
     return `<a class="card" href="#${pg}" data-act="pg" data-pg="${pg}"><p class="eyebrow ${mkCls(m)}">${tit(m)}</p><div class="kpi"><div class="val" style="font-size:30px">${mi(y26)}</div>
-      <div class="sub">${vc(varr(y26, y25))} sobre 2025</div></div>${chart(a, 'rs', 120, 244, false).replace(/<div class="legend">.*<\/div>$/, '')}</a>`;
+      <div class="sub">${CLI && !isFinite(varr(y26, y25)) ? 'no acumulado do ano' : vc(varr(y26, y25)) + ' sobre 2025'}</div></div>${chart(a, 'rs', 120, 244, false).replace(/<div class="legend">.*<\/div>$/, '')}</a>`;
   }).join('') + '</div>';
-  // prateleira de distribuidores
-  const G = cubo('rs', {...op, chave: r => r[COL.grp]});
+  // prateleira de distribuidores (o perfil de cliente só tem a si mesmo: fica fora)
+  const G = CLI ? new Map() : cubo('rs', {...op, chave: r => r[COL.grp]});
   const gl = [...G.entries()].map(([k, a]) => ({k, y26: ytd(a, 2026, 'rs'), y25: ytd(a, 2025, 'rs')})).filter(x => isFinite(x.y26)).sort((a, b) => b.y26 - a.y26);
-  h += `<h2 class="sec">Os distribuidores. <span>Quem puxa e quem segura o ano.</span></h2><div class="shelf">` + gl.map(x => {
+  if (gl.length) h += `<h2 class="sec">Os distribuidores. <span>Quem puxa e quem segura o ano.</span></h2><div class="shelf">` + gl.map(x => {
     const nome = dic.grp[x.k], uf = D.depara.find(d => d.grp === nome);
     return `<div class="card kpi"><p class="eyebrow">${uf ? uf.uf + ' · ' + tit(uf.canal) : ''}</p><h3>${tit(nome)}</h3><div class="val" style="font-size:28px">${mi(x.y26)}</div>
       <div class="sub">${vc(varr(x.y26, x.y25))} sobre 2025${uf ? ' · ' + uf.executivo : ''}</div></div>`;
@@ -669,19 +706,20 @@ function pgInicio() {
     ['confronto','Confronto de fontes','MTRIX x Colecta nos mesmos meses, distribuidor, marca e segmento.'],
     ['depara','De-para','Hierarquia, fonte por período e a régua única de segmentos.'],
     ['base','Base geral','A base longa que alimenta tudo, filtrada pelas segmentações, com download em CSV.']];
-  h += `<h2 class="sec">O índice. <span>Na mesma ordem das abas do Dash Power Query.</span></h2><div class="grid g3">` +
-    IDX.map(([pg, n, d], i) => `<a class="card idx" href="#${pg}" data-act="pg" data-pg="${pg}" style="color:inherit;text-decoration:none"><p class="eyebrow">${String(i + 1).padStart(2, '0')}</p><h4>${n}</h4><p>${d}</p><div class="go"><span style="color:var(--link)">Abrir ›</span></div></a>`).join('') + '</div>';
-  h += `<h2 class="sec">Como usar as segmentações. <span>As mesmas regras do Excel.</span></h2><div class="card"><ol class="num">
-    <li>As segmentações no topo valem para o site inteiro: marcar GO em Veja filtra também Dados gerais, Vanish e o resto. ${ART ? 'O recorte fica lembrado neste navegador na próxima vez que você abrir o link.' : 'O link da página guarda o recorte, então dá para mandar a visão já filtrada.'}</li>
-    <li>Marca e Segmento: escolha Veja e depois Cozinha para ver só Veja Cozinha. Sem marca marcada, a positivação vem do total do distribuidor, sem soma dupla.</li>
-    <li>Comparabilidade: "1. Mesma régua" mostra só os meses em que os dois anos vêm da mesma ferramenta (a leitura mais limpa de crescimento). Marque 1 e 2 para a série emendada. "3. Fora da janela" são meses que um dos anos não tem.</li>
+  const IDXC = idxCli(IDX);
+  if (!TV.on) h += `<h2 class="sec">O índice. <span>${CLI ? 'As páginas do sell out.' : 'Na mesma ordem das abas do Dash Power Query.'}</span></h2><div class="grid g3">` +
+    IDXC.map(([pg, n, d], i) => `<a class="card idx" href="#${pg}" data-act="pg" data-pg="${pg}" style="color:inherit;text-decoration:none"><p class="eyebrow">${String(i + 1).padStart(2, '0')}</p><h4>${n}</h4><p>${d}</p><div class="go"><span style="color:var(--link)">Abrir ›</span></div></a>`).join('') + '</div>';
+  if (!TV.on) h += `<h2 class="sec">Como usar as segmentações. <span>${CLI ? 'Regras de leitura.' : 'As mesmas regras do Excel.'}</span></h2><div class="card"><ol class="num">
+    <li>As segmentações no topo valem para o site inteiro: marcar ${CLI ? 'Veja' : 'GO em Veja'} filtra também Dados gerais, Vanish e o resto. ${ART ? 'O recorte fica lembrado neste navegador na próxima vez que você abrir o link.' : 'O link da página guarda o recorte, então dá para mandar a visão já filtrada.'}</li>
+    <li>Marca e Segmento: escolha Veja e depois Cozinha para ver só Veja Cozinha. Sem marca marcada, a positivação vem do total ${CLI ? 'de lojas' : 'do distribuidor'}, sem soma dupla.</li>
+    ${CLI ? '' : '<li>Comparabilidade: "1. Mesma régua" mostra só os meses em que os dois anos vêm da mesma ferramenta (a leitura mais limpa de crescimento). Marque 1 e 2 para a série emendada. "3. Fora da janela" são meses que um dos anos não tem.</li>'}
     ${(D.regras || []).map(r => `<li>${esc(r)}</li>`).join('')}</ol></div>`;
   return h;
 }
 
 function pgGeral() {
   const op = {marcas: gMarcas(), segs: gSegs()};
-  let h = hero('Dados gerais', 'Total da carteira.', 'Sell out do canal indireto CTO, em R$, caixas e PDVs, mês a mês.') + recorteTxt() + kpis(op);
+  let h = hero('Dados gerais', CLI ? 'O total.' : 'Total da carteira.', CLI ? esc(CLIENTE.sub_geral || '') : 'Sell out do canal indireto CTO, em R$, caixas e PDVs, mês a mês.') + recorteTxt() + kpis(op);
   h += `<h2 class="sec">Visão total. <span>Os três blocos do Power Query num card só.</span></h2>` + bloco('geral', 'Total', op);
   // ticket e R$ por caixa
   const r = um('rs', op), c = um('cx', op), p = um('pdv', op);
@@ -693,6 +731,7 @@ function pgGeral() {
     mini(tk, p, 'Ticket médio · R$ por PDV', 'Por PDV positivado no mês.') + mini(rc, c, 'R$ por caixa', 'Caixas não comparam entre ferramentas.') + '</div>';
   const MK = dic.marca.map((m, i) => [i, tit(m)]).filter(([i]) => i !== TODAS);
   h += `<h2 class="sec">Marca a marca. <span>Acumulado de ${corteTxt()}.</span></h2><div class="card">` + tabelaYTD('Marca', MK, r => r[COL.marca], op, true) + '</div>';
+  if (CLI) return h;   // perfil de cliente: uma UF e um distribuidor só
   const UFS = ['DF','GO','MS','MT','TO','PA'].map(u => [id('uf', u), u]);
   h += `<h2 class="sec">UF contra UF. <span>PA é o JC PA, fora da Área 7.</span></h2><div class="card">` + tabelaYTD('UF', UFS, r => r[COL.uf], op) + '</div>';
   const GR = D.depara.map(d => [id('grp', d.grp), tit(d.grp), d.uf]);
@@ -707,7 +746,7 @@ function segsDaMarca(nomes) {
 }
 function secaoMarca(chave, rotulo, nomes) {
   const mk = marcasDe(nomes), segsG = gSegs(), op = {marcas: mk, segs: segsG};
-  let h = kpis(op) + `<h2 class="sec">${tit(rotulo)} · visão marca. <span>${T('R$, caixas e PDVs mês a mês.', 'NR e caixas mês a mês.')}</span></h2>` + bloco(chave, tit(rotulo), op);
+  let h = kpis(op) + `<h2 class="sec">${tit(rotulo)} · visão marca. <span>${T('R$, caixas e PDVs mês a mês.', `${NR()} e caixas mês a mês.`)}</span></h2>` + bloco(chave, tit(rotulo), op);
   // matriz segmento x mês
   const med = MED[S.ui['mat' + chave]] ? S.ui['mat' + chave] : 'rs';
   const segs = segsDaMarca(nomes).filter(s => !segsG || segsG.has(s));
@@ -738,13 +777,13 @@ function secaoMarca(chave, rotulo, nomes) {
   const RS_ = med === 'rs' ? C : cubo('rs', {marcas: mk, segs: segsG, chave: r => r[COL.segmento]});
   const ordem = L.map(x => x.s);
   let sel = +(S.ui['sg' + chave] ?? ordem[0]); if (!ordem.includes(sel)) sel = ordem[0];
-  h += `<h2 class="sec">Segmento a segmento. <span>Escolha o segmento para abrir ${T('R$, caixas e PDVs', 'NR e caixas')}.</span></h2><div class="shelf">` + ordem.map(s => {
+  h += `<h2 class="sec">Segmento a segmento. <span>Escolha o segmento para abrir ${T('R$, caixas e PDVs', `${NR()} e caixas`)}.</span></h2><div class="shelf">` + ordem.map(s => {
     const a = RS_.get(s); if (!a) return ''; const y26 = ytd(a, 2026, 'rs'), y25 = ytd(a, 2025, 'rs');
     return `<button class="card kpi" data-act="ui" data-k="sg${chave}" data-v="${s}" style="border:0;text-align:left;cursor:pointer;flex-basis:220px;${s === sel ? 'box-shadow:inset 0 0 0 2px #1D1D1F' : ''}">
       <div class="lab">${tit(dic.segmento[s])}</div><div class="val" style="font-size:26px">${mi(y26)}</div><div class="sub">${vc(varr(y26, y25))} sobre 2025</div></button>`;
   }).join('') + '</div>';
   h += bloco(chave + '_s' + sel, `${tit(rotulo)} · ${tit(dic.segmento[sel])}`, {marcas: mk, segs: new Set([sel])});
-  if (MODO === 'si') {   // Sell In: curvas por cliente dentro da marca
+  if (MODO === 'si' && !CLI) {   // Sell In: curvas por cliente dentro da marca (o cliente só tem a si mesmo)
     const Lc = curvasDados(r => r[COL.grp], op);
     h += `<h2 class="sec">Cliente a cliente em ${tit(rotulo)}. <span>Quem cresce e quem cai na marca, com o plano do Q4. Clique no nome para abrir.</span></h2>` + termometro(Lc.map(x => ({v: x.d}))) +
       `<div class="card">${tabelaCurvas('mk' + chave, 'Cliente', Lc, k => tit(dic.grp[k]), k => { const d = infoGrp(dic.grp[k]); return d ? esc(d.executivo) : ''; })}</div>`;
@@ -759,7 +798,7 @@ function pgMarca(pg) {
   return hero(`<span class="${mkCls(nome)}">${tit(nome)}</span>`, `${tit(nome)}.`, sub) + recorteTxt() + secaoMarca(pg, nome, MARCA_PAG[pg]);
 }
 function pgHN() {
-  let h = hero('H&N', 'Health & Nutrition.', T('Sustagen, Bem Estar Sexual (Jontex + Olla) e Veet.', 'Jontex e Olla, Sustagen, Veet e as outras marcas de Health, com o AR do Q4 de H&N.')) + recorteTxt();
+  let h = hero('H&N', 'Health & Nutrition.', T('Sustagen, Bem Estar Sexual (Jontex + Olla) e Veet.', CLI ? 'Jontex e Olla, Sustagen, Veet e as outras marcas de Health.' : 'Jontex e Olla, Sustagen, Veet e as outras marcas de Health, com o AR do Q4 de H&N.')) + recorteTxt();
   h += `<div class="pills">${HN.map(([r], i) => `<button data-act="ui" data-k="hn" data-v="${i}" class="${+(S.ui.hn || 0) === i ? 'on' : ''}">${tit(r)}</button>`).join('')}</div>`;
   const [rot, mks] = HN[+(S.ui.hn || 0)];
   return h + secaoMarca('hn' + (S.ui.hn || 0), rot, mks);
@@ -783,7 +822,7 @@ function pgDiretor() {
   const sk = S.ui.sortrob || '-5';
   const j = Math.abs(+sk), desc = sk.startsWith('-');
   linhas.sort((a, b) => ((b.cols[j][1] || 0) - (a.cols[j][1] || 0)) * (desc ? 1 : -1));
-  const heads = [...MK.map(tit), T('Total R$', 'Total NR'), 'Caixas', ...(si ? ['Q4: plano'] : [])];
+  const heads = [...MK.map(tit), T('Total R$', 'Total ' + NR()), 'Caixas', ...(si ? ['Q4: plano'] : [])];
   const row = (l, c) => `<tr class="${c || ''}"><td class="l b">${l.nome}</td><td class="l">${l.uf}</td>` + l.cols.map(([a, b]) => `<td>${n0(a)}</td><td class="b">${n0(b)}</td><td>${vc(varr(b, a))}</td>`).join('') + '</tr>';
   return hero('Visão do Diretor', T('Distribuidor x marca.', 'Cliente x marca.'), `Acumulado de ${corteTxt()}, 2025 contra 2026${T('.', '; no fim, o plano do Q4 contra o Q4 de 2025.')}`) + recorteTxt() +
     `<div class="card"><div class="tw"><table><thead><tr><th class="l">${T('Grp. econômico', 'Cliente')}</th><th class="l">${T('UF', 'Canal')}</th>` +
@@ -925,7 +964,7 @@ function scanLinhas() {
 }
 /* ----- market share por UF no título das Redes Scanntech: share oficial por UF (Scanntech Painel 2.0), um mini gráfico por UF e o consolidado da Área 7 ----- */
 const SU_ORDEM = ['A7', 'DF', 'GO', 'MT', 'MS', 'TO'];
-const shareUF = () => { const Q = RD && RD.share_uf; return Q && Q.ufs && Array.isArray(Q.meses) && Q.ufs.A7 ? Q : null; };   // arquivo de dados antigo, sem o campo: o bloco não aparece
+const shareUF = () => { const Q = RD && RD.share_uf; return Q && Q.ufs && Array.isArray(Q.meses) && (Q.ufs.A7 || (CLI && Object.keys(Q.ufs).length)) ? Q : null; };   // o perfil de cliente traz só a UF dele   // arquivo de dados antigo, sem o campo: o bloco não aparece
 const suNum = x => (typeof x === 'number' && isFinite(x) ? x : NaN);
 const suVal = (Q, u, ano, m) => { const i = Q.meses.indexOf(`${ano}${String(m).padStart(2, '0')}`); return i >= 0 && Array.isArray(u.sh) ? suNum(u.sh[i]) : NaN; };
 const suPct = x => (isFinite(x) ? nf1.format(x) + '%' : 'sem dado');
@@ -951,8 +990,8 @@ function suVals(Q, P, u) {   // acumulado do ano e do anterior e a variação (d
   const y6 = suAcum(Q, u, P.ano, P.c), y5 = suAcum(Q, u, P.ant, P.c);
   return {y6, y5, d: isFinite(y6) && isFinite(y5) ? suUm(suUm(y6) - suUm(y5)) : NaN};
 }
-function suMini(Q, k, W, P) {   // ano anterior cinza, ano atual rosa; eixo vertical justo nos dados da UF; o mês parcial em ponto vazado, ligado por tracejado
-  const u = Q.ufs[k], H = 92, pl = 28, pr = 8, pt = 8, pb = 18, gw = (W - pl - pr) / 11;
+function suMini(Q, k, W, P, H = 92) {   // ano anterior cinza, ano atual rosa; eixo vertical justo nos dados da UF; o mês parcial em ponto vazado, ligado por tracejado
+  const u = Q.ufs[k], pl = 28, pr = 8, pt = 8, pb = 18, gw = (W - pl - pr) / 11;
   const ehP = m => P.mP > 0 && m === P.mP, v6 = m => (m <= P.fim ? suVal(Q, u, P.ano, m) : NaN);
   const s25 = [], s26 = [];
   for (let m = 1; m <= 12; m++) { const a = suVal(Q, u, P.ant, m), b = v6(m); if (isFinite(a)) s25.push([m, a]); if (isFinite(b)) s26.push([m, b]); }
@@ -979,7 +1018,7 @@ function suMini(Q, k, W, P) {   // ano anterior cinza, ano atual rosa; eixo vert
 function blocoShareUF() {   // um card só: Área 7 primeiro e as 5 UFs; a tabela mês x UF fica escondida na tela e sai no Excel da página
   const Q = shareUF(); if (!Q) return '';
   const P = suPeriodo(Q), ks = SU_ORDEM.filter(k => Q.ufs[k] && Array.isArray(Q.ufs[k].sh)), U5 = ks.filter(k => k !== 'A7');
-  const cols = SLIDE ? 6 : innerWidth <= 640 ? 2 : innerWidth <= 900 ? 3 : 6, gap = SLIDE || innerWidth > 640 ? 18 : 14;
+  const um1 = ks.length === 1, cols = um1 ? 1 : SLIDE ? 6 : innerWidth <= 640 ? 2 : innerWidth <= 900 ? 3 : 6, gap = SLIDE || innerWidth > 640 ? 18 : 14;
   const W = Math.max(120, Math.floor((larguraCard() - gap * (cols - 1)) / cols));
   const aa = String(P.ano).slice(2), a5 = String(P.ant).slice(2), rotC = mes(P.c) + (P.cP ? '*' : '');
   const V = Object.fromEntries(ks.map(k => [k, suVals(Q, P, Q.ufs[k])]));
@@ -990,15 +1029,15 @@ function blocoShareUF() {   // um card só: Área 7 primeiro e as 5 UFs; a tabel
     return `<div class="su-mini${k === 'A7' ? ' a7' : ''}${dest.length && !dest.includes(k) ? ' su-off' : ''}"><div class="su-uf"><b>${k === 'A7' ? 'Área 7' : k}</b><span>${k === 'A7' ? `${U5.length} UFs` : esc(u.nome)}</span></div>
       <div class="su-val">${suPct(y6)}</div>
       <div class="su-dl"><span class="su-d ${c}">${c === 'up' ? '▲' : c === 'down' ? '▼' : '●'} ${suPP(d)}</span><span>${P.ant}: ${suPct(y5)}</span></div>
-      ${suMini(Q, k, W, P)}<div class="su-ult">${isFinite(vC) ? `<span>${mes(P.c)}/${aa}${P.cP ? '*' : ''} <b>${suPct(vC)}</b></span>` : ''}${isFinite(vP) ? `<span>${suRot(P.pa)}* ${suPct(vP)}</span>` : ''}</div></div>`;
+      ${suMini(Q, k, W, P, um1 ? (SLIDE ? 200 : innerWidth <= 640 ? 130 : 190) : 92)}<div class="su-ult">${isFinite(vC) ? `<span>${mes(P.c)}/${aa}${P.cP ? '*' : ''} <b>${suPct(vC)}</b></span>` : ''}${isFinite(vP) ? `<span>${suRot(P.pa)}* ${suPct(vP)}</span>` : ''}</div></div>`;
   };
   const nq = U5.filter(k => suCls(V[k].d) === 'down').length, ng = U5.filter(k => suCls(V[k].d) === 'up').length, n = U5.length;
-  const manchete = nq ? (nq === n ? `Share cai nas ${n} UFs.` : `Share cai em ${nq} de ${n} UFs.`) : ng ? (ng === n ? `Share sobe nas ${n} UFs.` : `Share sobe em ${ng} de ${n} UFs.`) : `Share estável nas ${n} UFs.`;
+  const manchete = n === 1 ? `Share ${nq ? 'cai' : ng ? 'sobe' : 'estável'} no ${U5[0]}.` : nq ? (nq === n ? `Share cai nas ${n} UFs.` : `Share cai em ${nq} de ${n} UFs.`) : ng ? (ng === n ? `Share sobe nas ${n} UFs.` : `Share sobe em ${ng} de ${n} UFs.`) : `Share estável nas ${n} UFs.`;
   const temP = P.mP > 0 && P.fim >= P.mP, txP = temP ? `${suRot(P.pa)}* parcial até ${Q.parcial_ate || ''}` : '';
   const filtro = FILTROS.some(([k]) => S.f[k].size);
-  const notas = ['Share oficial de cada UF, com todas as lojas da Scanntech no estado. O share das redes, nos números abaixo, conta só as redes do Resumo por Rede Mensal que liberam o mercado e por isso dá outro número.',
+  const notas = [CLI ? 'Share oficial da Reckitt no estado, com todas as lojas que têm leitura da Scanntech (Painel 2.0, sem Desinfetantes).' : 'Share oficial de cada UF, com todas as lojas da Scanntech no estado. O share das redes, nos números abaixo, conta só as redes do Resumo por Rede Mensal que liberam o mercado e por isso dá outro número.',
     temP ? (P.cP ? `* ${suRot(P.pa)} parcial até ${Q.parcial_ate}, dentro do acumulado: compara um mês ainda incompleto com o mês cheio de ${P.ant}.` : `* ${suRot(P.pa)} parcial até ${Q.parcial_ate}, fora do acumulado (ponto vazado na curva).`) : '',
-    filtro ? `Reckitt inteira nas ${n} UFs: o share por UF não abre por marca nem segue os filtros do site${dest.length ? '; a UF filtrada fica em destaque' : ''}.` : '',
+    filtro ? `Reckitt inteira${n > 1 ? ` nas ${n} UFs` : ''}: o share por UF não abre por marca nem segue os filtros do site${dest.length ? '; a UF filtrada fica em destaque' : ''}.` : '',
     !P.segue && S.corte !== P.mY ? `O share por UF fica em jan a ${mes(P.mY)}/${aa}: não segue o mês de corte do site.` : ''].filter(Boolean).join(' ');
   const celula = x => (isFinite(x) ? nf1.format(x) + '%' : '');
   const tot = (rot, f) => `<tr class="tot"><td class="l">${rot}</td>${ks.map(k => `<td>${f(V[k])}</td>`).join('')}</tr>`;
@@ -1008,9 +1047,10 @@ function blocoShareUF() {   // um card só: Área 7 primeiro e as 5 UFs; a tabel
     tot(`Acumulado jan a ${mes(P.c)}/${a5}`, x => celula(x.y5)) + tot(`Acumulado jan a ${rotC}/${aa}`, x => celula(x.y6)) + tot(`Variação ${aa} contra ${a5}`, x => suPP(x.d)) + '</tbody></table></div>';
   return `<div class="card shareuf"><div class="su-top"><div><p class="eyebrow">Market share por UF</p><h3>${manchete} <span>Acumulado de jan a ${rotC} de ${P.ano} contra o mesmo período de ${P.ant}.</span></h3></div>
     <div class="legend su-leg"><span><i class="su-ln" style="background:#D2D2D7"></i>${P.ant}</span><span><i class="su-ln su-26" style="background:#FF007F"></i>${P.ano}</span></div></div>
-    <div class="su-grid">${ks.map(mini).join('')}</div>${notas ? `<p class="su-nota">${esc(notas)}</p>` : ''}<p class="su-fonte">${esc(String(Q.fonte || 'Scanntech Painel 2.0').replace(/YTD jan-[a-zç]+\*?$/, `YTD jan-${rotC}`))}</p>${tabela}</div>`;   // o período da fonte segue o do card
+    <div class="su-grid${um1 ? ' su-um' : ''}">${ks.map(mini).join('')}</div>${notas ? `<p class="su-nota">${esc(notas)}</p>` : ''}<p class="su-fonte">${esc(String(Q.fonte || 'Scanntech Painel 2.0').replace(/YTD jan-[a-zç]+\*?$/, `YTD jan-${rotC}`))}</p>${tabela}</div>`;   // o período da fonte segue o do card
 }
 function pgRedesScan() {
+  if (CLI) return hero('Share de mercado', 'O share da Reckitt.', 'Share oficial da Reckitt no estado, mês a mês, contra o ano anterior.') + (blocoShareUF() || '<div class="card"><div class="empty">Sem o share do estado nesta versão.</div></div>');   // perfil de cliente: só o share oficial da UF dele
   if (!RD) return hero('Redes Scanntech', 'Sem base de redes.', 'Gere o arquivo de dados com a base de redes.');
   return emFonte(marcasScan() && RD.scanm ? 'scanntech_marcas' : 'scanntech', pgRedesScanFonte);
 }
@@ -1144,16 +1184,16 @@ function pgRedesColFonte() {
   const nomeadas = itens.filter(x => x.raiz !== 'DEMAIS' && x.raiz !== 'PF').sort((a, b) => b.r26 - a.r26);
   const top20 = nomeadas.slice(0, 20).reduce((a, x) => a + x.r26, 0);
   const sel = S.ui.clsel ? itens.find(x => x.raiz === S.ui.clsel) : null;
-  let h = hero('Redes Colecta', 'Redes compradoras.', 'Clientes dos distribuidores agrupados por rede (raiz do CNPJ). Filtre executivo, UF e distribuidor no topo.') + recorteTxt() + notaCorteRd();
+  let h = (CLI ? hero('Lojas e redes', 'Quem compra.', esc(CLIENTE.sub_redes || 'As lojas e redes clientes, agrupadas pela raiz do CNPJ.')) : hero('Redes Colecta', 'Redes compradoras.', 'Clientes dos distribuidores agrupados por rede (raiz do CNPJ). Filtre executivo, UF e distribuidor no topo.')) + recorteTxt() + notaCorteRd();
   if (S.f.marca.size && !RD.colm) h += '<p class="note">A abertura por marca das redes do Colecta ainda não está na base: os números são de todas as marcas.</p>';
   else if (S.f.marca.size) h += `<p class="note">Recorte por marca: ${[...S.f.marca].map(i => tit(dic.marca[i])).join(', ')}.${temHN() ? ' Sustagen, Jontex, Olla e Veet aparecem juntos como H&N nas redes.' : ''}</p>`;
   if (S.f.segmento.size) h += '<p class="note">O segmento não abre nas redes: os números são da marca inteira.</p>';
-  if (['canal', 'fonte', 'janela'].some(k => S.f[k].size)) h += '<p class="note">Canal, fonte e comparabilidade não se aplicam às redes do Colecta: os números são de todos os canais. Aqui valem UF da loja, distribuidor, executivo, recorte e marca.</p>';
+  if (!CLI && ['canal', 'fonte', 'janela'].some(k => S.f[k].size)) h += '<p class="note">Canal, fonte e comparabilidade não se aplicam às redes do Colecta: os números são de todos os canais. Aqui valem UF da loja, distribuidor, executivo, recorte e marca.</p>';
   if (S.f.uf.size) h += '<p class="note">A UF aqui é a da loja (cadastro do CNPJ), não a do distribuidor. Lojas de UFs fora da lista do filtro (BA e MA) só aparecem sem filtro de UF.</p>';
   h += `<div class="grid g4">
-    <div class="card kpi"><div class="lab">Compra das redes ${corteTxt()}</div><div class="val">${mi(r26)}</div><div class="sub dv">${b25 >= 1000 ? vbig(varr(b26, b25)) + `<span>26 contra 25 na base comparável (${[...new Set(L.filter(temBase).map(c => tit(c.grp)))].join(', ')})</span>` : '<span>sem base comparável de 2025 neste recorte</span>'}</div></div>
+    <div class="card kpi"><div class="lab">Compra das redes ${corteTxt()}</div><div class="val">${mi(r26)}</div><div class="sub dv">${b25 >= 1000 ? vbig(varr(b26, b25)) + `<span>26 contra 25 na base comparável (${[...new Set(L.filter(temBase).map(c => tit(c.grp)))].join(', ')})</span>` : `<span>${CLI ? 'sem 2025 completo no Colecta para comparar' : 'sem base comparável de 2025 neste recorte'}</span>`}</div></div>
     <div class="card kpi"><div class="lab">Tendência${marcaParc(cR())}</div><div class="val ${cls(varR(...triCol(L)))}">${isFinite(varR(...triCol(L))) ? pc(varR(...triCol(L))) : '·'}</div><div class="sub">${isFinite(varR(...triCol(L))) ? 'últimos 3 meses contra os 3 anteriores' + (triFora(L).length ? ' (sem ' + triFora(L).join(', ') + ', que não cobre as 6 janelas)' : '') : 'sem as 6 janelas de comparação: o distribuidor entrou depois'}</div></div>
-    <div class="card kpi"><div class="lab">Lojas compradoras em ${mes(cR())}${marcaParc(cR())}</div><div class="val">${n0(unicosUlt !== null ? unicosUlt : lojasUlt)}</div><div class="sub">${unicosUlt !== null ? `CNPJs únicos; soma por distribuidor ${n0(lojasUlt)} (sobreposição ${p1(1 - unicosUlt / lojasUlt)})` : `CNPJs, soma por distribuidor${lojasDe ? ' (todas as marcas)' : ''}`}; ${n0(nomeadas.length)} redes nomeadas</div></div>
+    <div class="card kpi"><div class="lab">Lojas compradoras em ${mes(cR())}${marcaParc(cR())}</div><div class="val">${n0(unicosUlt !== null ? unicosUlt : lojasUlt)}</div><div class="sub">${CLI ? `CNPJs com compra no mês${lojasDe ? ' (todas as marcas)' : ''}` : unicosUlt !== null ? `CNPJs únicos; soma por distribuidor ${n0(lojasUlt)} (sobreposição ${p1(1 - unicosUlt / lojasUlt)})` : `CNPJs, soma por distribuidor${lojasDe ? ' (todas as marcas)' : ''}`}; ${n0(nomeadas.length)} redes nomeadas</div></div>
     <div class="card kpi"><div class="lab">Concentração</div><div class="val">${p1(top20 / r26)}</div><div class="sub">do R$ nas 20 maiores redes</div></div></div>`;
   h += `<h2 class="sec">Quantas crescem e quantas caem. <span>Tendência dos últimos 3 meses contra os 3 anteriores, por rede.</span></h2>` + termometro(nomeadas);
   if (sel) h += detalheCol(sel);
@@ -1168,10 +1208,10 @@ function tabelaCol(itens) {
   lista = ordena(lista, 'cl', [x => nomeRaiz(x.raiz), x => x.ufs, x => x.b25, x => x.r26, x => x.vr, x => x.tr, x => x.lojas], 3);
   lista = [...lista.filter(x => x.raiz !== 'DEMAIS' && x.raiz !== 'PF'), ...lista.filter(x => x.raiz === 'DEMAIS' || x.raiz === 'PF')];
   const mostra = S.ui.cltodas ? lista : lista.slice(0, 80);
-  return `<div class="tw"><table><thead><tr>${thSort('cl', 0, 'Rede', 'l')}${thSort('cl', 1, 'UF', 'l')}<th class="l">Distribuidor</th>${thSort('cl', 2, 'R$ 25 (base)')}${thSort('cl', 3, 'R$ 26')}${thSort('cl', 4, '26 vs 25')}${thSort('cl', 5, 'Últ. 3m vs 3 ant.' + marcaParc(cR()))}${thSort('cl', 6, `Lojas ${mes(cR())}${marcaParc(cR())}`)}<th class="l">Na Scanntech</th></tr></thead><tbody>` +
-    (mostra.length ? '' : '<tr><td colspan="9" class="empty">Nada neste recorte.</td></tr>') + mostra.map(x => { const n = RD.nomes[x.raiz] || {}; return `<tr class="clk" data-act="ui" data-k="clsel" data-v="${x.raiz}"><td class="l b">${tit(nomeRaiz(x.raiz))}${n.municipio ? `<div class="mini">${esc(n.municipio)}</div>` : ''}</td><td class="l">${x.ufs}</td><td class="l">${x.grps.map(tit).join(', ')}</td><td>${n0(x.b25 || NaN)}</td><td class="b">${n0(x.r26)}</td><td>${vc(x.vr)}${x.parcial && isFinite(x.vr) ? '<span class="mini"> base parcial</span>' : ''}</td><td>${vc(x.tr)}</td><td>${n0(x.lojas || NaN)}</td><td class="l">${x.sc ? `<span class="tag">✓ ${x.sc.map(k => tit(k.split('|')[0])).filter((v, i, a) => a.indexOf(v) === i).join(', ')}</span>` : ''}</td></tr>`; }).join('') +
+  return `<div class="tw"><table><thead><tr>${thSort('cl', 0, 'Rede', 'l')}${thSort('cl', 1, 'UF', 'l')}${CLI ? '' : '<th class="l">Distribuidor</th>'}${thSort('cl', 2, 'R$ 25 (base)')}${thSort('cl', 3, 'R$ 26')}${thSort('cl', 4, '26 vs 25')}${thSort('cl', 5, 'Últ. 3m vs 3 ant.' + marcaParc(cR()))}${thSort('cl', 6, `Lojas ${mes(cR())}${marcaParc(cR())}`)}${CLI ? '' : '<th class="l">Na Scanntech</th>'}</tr></thead><tbody>` +
+    (mostra.length ? '' : `<tr><td colspan="${CLI ? 7 : 9}" class="empty">Nada neste recorte.</td></tr>`) + mostra.map(x => { const n = RD.nomes[x.raiz] || {}; return `<tr class="clk" data-act="ui" data-k="clsel" data-v="${x.raiz}"><td class="l b">${tit(nomeRaiz(x.raiz))}${n.municipio ? `<div class="mini">${esc(n.municipio)}</div>` : ''}</td><td class="l">${x.ufs}</td>${CLI ? '' : `<td class="l">${x.grps.map(tit).join(', ')}</td>`}<td>${n0(x.b25 || NaN)}</td><td class="b">${n0(x.r26)}</td><td>${vc(x.vr)}${x.parcial && isFinite(x.vr) ? '<span class="mini"> base parcial</span>' : ''}</td><td>${vc(x.tr)}</td><td>${n0(x.lojas || NaN)}</td>${CLI ? '' : `<td class="l">${x.sc ? `<span class="tag">✓ ${x.sc.map(k => tit(k.split('|')[0])).filter((v, i, a) => a.indexOf(v) === i).join(', ')}</span>` : ''}</td>`}</tr>`; }).join('') +
     `</tbody></table></div>${!S.ui.cltodas && lista.length > 80 ? `<div class="pager"><button data-act="ui" data-k="cltodas" data-v="1">Mostrar todas as ${n0(lista.length)} redes</button></div>` : ''}
-    <p class="note" style="margin:12px 0 0">Rede = raiz do CNPJ (8 dígitos); nome pela Receita. As 1.000 maiores redes aparecem nomeadas; o resto está em "Demais clientes". 26 contra 25 só nos distribuidores com 2025 completo no Colecta (${[...BASE_COMP].map(tit).join(', ')}) (acumulado, mês sem compra conta como zero). Os distribuidores que entraram no Colecta depois de jan/25 ou têm 2025 incompleto ficam fora dessa conta: para eles vale a tendência dos últimos 3 meses. Lojas = soma de CNPJs por distribuidor.</p>`;
+    ${CLI ? '<p class="note" style="margin:12px 0 0">Rede = raiz do CNPJ (8 dígitos); nome pela Receita. As redes maiores aparecem nomeadas; o resto está em "Demais clientes". A comparação 26 contra 25 só vale com 2025 completo no Colecta; até lá, vale a tendência dos últimos 3 meses contra os 3 anteriores. Lojas = CNPJs com compra no mês.</p>' : `<p class="note" style="margin:12px 0 0">Rede = raiz do CNPJ (8 dígitos); nome pela Receita. As 1.000 maiores redes aparecem nomeadas; o resto está em "Demais clientes". 26 contra 25 só nos distribuidores com 2025 completo no Colecta (${[...BASE_COMP].map(tit).join(', ')}) (acumulado, mês sem compra conta como zero). Os distribuidores que entraram no Colecta depois de jan/25 ou têm 2025 incompleto ficam fora dessa conta: para eles vale a tendência dos últimos 3 meses. Lojas = soma de CNPJs por distribuidor.</p>`}`;
 }
 function detalheCol(x) {
   const n = RD.nomes[x.raiz] || {};
@@ -1182,11 +1222,11 @@ function detalheCol(x) {
     ${chart(serie48(x.rs), 'rs', 250, null, true, {fv: varR, semVar: x.parcial})}<div class="tw"><table><thead><tr><th>Mês</th><th>R$ 25</th><th>R$ 26</th><th>Var. (base comparável)</th><th>Lojas 25</th><th>Lojas 26</th></tr></thead><tbody>` +
     ate(12).map(m => { const i5 = RM.indexOf(`2025${String(m).padStart(2, '0')}`), i6 = RM.indexOf(`2026${String(m).padStart(2, '0')}`), ok6 = m <= fimSerie();
       const a5 = x.rs[i5], a6 = ok6 ? x.rs[i6] : 0; return `<tr><td class="b">${mesRot(m)}</td><td>${n0(a5 || NaN)}</td><td class="b">${n0(a6 || NaN)}</td><td>${vcm(varR(ok6 ? rb[i6] : 0, rb[i5]), m)}</td><td>${n0(x.lj[i5] || NaN)}</td><td class="b">${n0(ok6 ? x.lj[i6] || NaN : NaN)}</td></tr>`; }).join('') + '</tbody></table></div>' +
-    `<p class="eyebrow" style="margin-top:22px">Por distribuidor</p><div class="tw"><table><thead><tr><th class="l">Distribuidor</th><th>R$ 25</th><th>R$ 26</th><th>26 vs 25</th><th>Últ. 3m vs 3 ant.</th></tr></thead><tbody>` +
-    porG.map(p => `<tr><td class="l b">${tit(p.g)}</td><td>${n0(p.r25)}</td><td class="b">${n0(p.r26)}</td><td>${vc(p.vr)}</td><td>${vc(p.tr)}</td></tr>`).join('') + '</tbody></table></div><p class="note" style="margin-top:8px">Lojas = soma de CNPJs por distribuidor. 26 contra 25 só nos distribuidores com 2025 completo no Colecta (acumulado; mês sem compra conta como zero).</p>';
+    (CLI ? '' : `<p class="eyebrow" style="margin-top:22px">Por distribuidor</p><div class="tw"><table><thead><tr><th class="l">Distribuidor</th><th>R$ 25</th><th>R$ 26</th><th>26 vs 25</th><th>Últ. 3m vs 3 ant.</th></tr></thead><tbody>` +
+    porG.map(p => `<tr><td class="l b">${tit(p.g)}</td><td>${n0(p.r25)}</td><td class="b">${n0(p.r26)}</td><td>${vc(p.vr)}</td><td>${vc(p.tr)}</td></tr>`).join('') + '</tbody></table></div><p class="note" style="margin-top:8px">Lojas = soma de CNPJs por distribuidor. 26 contra 25 só nos distribuidores com 2025 completo no Colecta (acumulado; mês sem compra conta como zero).</p>');
   if (RD.colm) h += emFonte('colecta_marcas', () => marcasColDet(x));
   if (x.sc) h += emFonte('scanntech', () => scanCruzDet(x));
-  else h += '<p class="note" style="margin-top:16px">Esta rede não foi encontrada na Scanntech (a loja pode não ter leitura de caixa na Scanntech ou ter outro nome de rede).</p>';
+  else if (!CLI) h += '<p class="note" style="margin-top:16px">Esta rede não foi encontrada na Scanntech (a loja pode não ter leitura de caixa na Scanntech ou ter outro nome de rede).</p>';
   return h + '</div>';
 }
 function marcasColDet(x) {   // marcas da rede no Colecta (abertura por marca, no corte dela)
@@ -1318,8 +1358,8 @@ function tabelaCurvas(t, rotulo, L, nomeFn, extraFn) {
     `<td>${n0(x.c26)}</td><td>${vc(varr(x.c26, x.c25))}</td><td>${n2(x.r26 / x.c26)}</td><td>${vc(varr(x.r26 / x.c26, x.r25 / x.c25))}</td>` +
     (comPl ? `<td class="b pl">${n0(zeroNaN(x.pl))}</td><td>${n0(x.q425)}</td><td>${vc(varr(x.pl, x.q425))}</td>` : '') + '</tr>';
   return `<div class="tw"><table><thead><tr>${thSort(t, 0, rotulo, 'l')}${extraFn ? '<th class="l"></th>' : ''}<th>Curva 25 · 26${comPl ? ' · plano' : ''}</th>
-    ${thSort(t, 1, `${T('R$', 'NR')} 25 ${corteTxt()}`)}${thSort(t, 2, `${T('R$', 'NR')} 26`)}${thSort(t, 3, '26 vs 25')}${thSort(t, 4, T('Δ R$', 'Δ NR R$'))}${thSort(t, 5, `${tri} vs 25`)}${thSort(t, 6, `${tri} vs 3 ant.`)}
-    ${thSort(t, 7, 'Caixas 26')}${thSort(t, 8, 'Var. cx')}${thSort(t, 9, T('R$/cx 26', 'NR/cx 26'))}${thSort(t, 10, T('Var. R$/cx', 'Var. NR/cx'))}
+    ${thSort(t, 1, `${T('R$', NR())} 25 ${corteTxt()}`)}${thSort(t, 2, `${T('R$', NR())} 26`)}${thSort(t, 3, '26 vs 25')}${thSort(t, 4, T('Δ R$', 'Δ ' + NR() + (CLI ? '' : ' R$')))}${thSort(t, 5, `${tri} vs 25`)}${thSort(t, 6, `${tri} vs 3 ant.`)}
+    ${thSort(t, 7, 'Caixas 26')}${thSort(t, 8, 'Var. cx')}${thSort(t, 9, T('R$/cx 26', NR() + '/cx 26'))}${thSort(t, 10, T('Var. R$/cx', 'Var. ' + NR() + '/cx'))}
     ${comPl ? `${thSort(t, 11, 'Plano Q4')}<th>Q4 2025</th>${thSort(t, 12, 'Plano vs Q4/25')}` : ''}</tr></thead><tbody>
     ${L.map(x => linha(x)).join('') || '<tr><td colspan="16" class="empty">Nada neste recorte.</td></tr>'}${L.length ? linha(T0, true) : ''}</tbody></table></div>
     <p class="note" style="margin:10px 0 0">Clique no título da coluna para ordenar. ${T('Δ R$', 'Δ NR R$')} = quanto somou ou tirou do ano.${T(' Caixas não comparam entre ferramentas (MTRIX e Colecta).', '')} A curva mostra 2025 em cinza, 2026 em rosa${comPl ? ' e o plano do Q4 tracejado' : ''}.</p>`;
@@ -1364,33 +1404,33 @@ function q4Resumo(op) {
 
 function pgSiInicio() {
   const op = {marcas: gMarcas(), segs: gSegs()};
-  const side = `<div class="side">${(D.equipe || []).map(([cargo, nome]) => `${esc(cargo)} <span class="lk">${esc(nome)}</span>`).join('<br>')}<br>Corte ${mes(S.corte)}/26 · Order Management de ${omData()}</div>`;
-  let h = hero('', 'Governança CTO.', 'Sell in do Centro-Oeste, mês a mês, com o plano do Q4.', side);
+  const side = `<div class="side">${(D.equipe || []).map(([cargo, nome]) => `${esc(cargo)} <span class="lk">${esc(nome)}</span>`).join('<br>')}<br>Corte ${mes(S.corte)}/26 · ${CLI ? 'P&L da Reckitt, meses fechados' : 'Order Management de ' + omData()}</div>`;
+  let h = hero('', esc(NOME_SITE()) + '.', CLI ? esc(CLIENTE.sub_si || '') : 'Sell in do Centro-Oeste, mês a mês, com o plano do Q4.', side);
   const pn = [['si-geral', 'Total', null], ...MK_HYG.map(m => ['si-' + m.toLowerCase(), tit(m), MARCA_PAG['si-' + m.toLowerCase()]]), ['si-hn', 'H&N', MK_HN_SI]];
   h += '<div class="pnav">' + pn.map(([pg, nome, mk]) => {
     const a = um('rs', {marcas: mk ? marcasDe(mk) : op.marcas, segs: op.segs}), d = varr(ytd(a, 2026, 'rs'), ytd(a, 2025, 'rs'));
-    return `<a href="#${pg}" data-act="pg" data-pg="${pg}"><div class="mk ${mkCls(mk && mk[0])}">${nome}</div><div class="v">${mi(ytd(a, 2026, 'rs'))} · ${vc(d)}</div></a>`;
+    return `<a href="#${pg}" data-act="pg" data-pg="${pg}"><div class="mk ${mkCls(mk && mk[0])}">${nome}</div><div class="v">${mi(ytd(a, 2026, 'rs'))}${CLI && !isFinite(d) ? '' : ' · ' + vc(d)}</div></a>`;
   }).join('') + '</div>';
   h += recorteTxt();
-  h += `<h2 class="sec">O ano em números. <span>NR e caixas de ${corteTxt()} contra o mesmo período de 2025.</span></h2>` + kpis(op);
-  h += q4Resumo(op);
+  h += `<h2 class="sec">O ano em números. <span>${NR()} e caixas de ${corteTxt()}${CLI && !(DSI.desde <= 2025) ? '.' : ' contra o mesmo período de 2025.'}</span></h2>` + kpis(op);
+  if (!CLI) h += q4Resumo(op);
   // marcas
   const chM = r => r[COL.marca];
   const R = cubo('rs', {chave: chM, segs: op.segs}), PR = cuboP('rs', {chave: chM, segs: op.segs});
-  h += `<h2 class="sec">As marcas. <span>Cada uma com a sua curva; out a dez em cinza é o plano.</span></h2><div class="shelf">` + [...MK_HYG, 'SUSTAGEN', 'JONTEX', 'OLLA', 'VEET'].map(m => {
+  h += `<h2 class="sec">As marcas. <span>Cada uma com a sua curva${CLI ? '.' : '; out a dez em cinza é o plano.'}</span></h2><div class="shelf">` + [...MK_HYG, 'SUSTAGEN', 'JONTEX', 'OLLA', 'VEET'].map(m => {
     const k = id('marca', m), a = R.get(k); if (!a) return '';
     const y26 = ytd(a, 2026, 'rs'), y25 = ytd(a, 2025, 'rs'), pg = MARCA_PAG['si-' + m.toLowerCase()] ? 'si-' + m.toLowerCase() : 'si-hn';
     return `<a class="card" href="#${pg}" data-act="pg" data-pg="${pg}"><p class="eyebrow ${mkCls(m)}">${tit(m)}</p><div class="kpi"><div class="val" style="font-size:30px">${mi(y26)}</div>
-      <div class="sub">${vc(varr(y26, y25))} sobre 2025</div></div>${chart(a, 'rs', 120, 244, false, {plano: PR.get(k)}).replace(/<div class="legend">.*<\/div>$/, '')}</a>`;
+      <div class="sub">${CLI && !isFinite(varr(y26, y25)) ? 'no acumulado do ano' : vc(varr(y26, y25)) + ' sobre 2025'}</div></div>${chart(a, 'rs', 120, 244, false, {plano: PR.get(k)}).replace(/<div class="legend">.*<\/div>$/, '')}</a>`;
   }).join('') + '</div>';
-  // clientes
-  const L = curvasDados(r => r[COL.grp], op).filter(x => isFinite(x.r26)).sort((a, b) => b.r26 - a.r26);
-  h += `<h2 class="sec">Os clientes. <span>Quem puxa e quem segura o ano.</span></h2><div class="shelf">` + L.map(x => {
+  // clientes (o perfil de cliente só tem a si mesmo: fica fora)
+  const L = CLI ? [] : curvasDados(r => r[COL.grp], op).filter(x => isFinite(x.r26)).sort((a, b) => b.r26 - a.r26);
+  if (!CLI) h += `<h2 class="sec">Os clientes. <span>Quem puxa e quem segura o ano.</span></h2><div class="shelf">` + L.map(x => {
     const nome = dic.grp[x.k], d = infoGrp(nome);
     return `<a class="card kpi" href="#si-clientes" data-act="pg" data-pg="si-clientes"><p class="eyebrow">${d ? tit(d.canal) : ''}</p><h3>${tit(nome)}</h3><div class="val" style="font-size:28px">${mi(x.r26)}</div>
       <div class="sub">${vc(x.d)} sobre 2025${d ? ' · ' + esc(d.executivo) : ''}</div>${spark(x.a, x.pa)}</a>`;
   }).join('') + '</div>';
-  h += ponte(curvasDados(r => r[COL.grp], op), k => tit(dic.grp[k]));
+  if (!CLI) h += ponte(curvasDados(r => r[COL.grp], op), k => tit(dic.grp[k]));
   const IDX = [['si-geral', 'Dados gerais', 'Total da carteira: NR e caixas mês a mês com o plano do Q4, NR por caixa, marca a marca, canal, BU, cliente e executivo.'],
     ['si-veja', 'Veja', 'Visão marca e segmentos, com as curvas por cliente dentro da marca.'], ['si-vanish', 'Vanish', 'Líquido, pó, barra e Vanish Others.'],
     ['si-harpic', 'Harpic', 'Pedra, ITC, ITB, líquido, blocos e Click Gel.'], ['si-finish', 'Finish', 'Pó, secante e tabletes.'],
@@ -1402,10 +1442,10 @@ function pgSiInicio() {
     ['si-mes', 'Mês em curso', 'Order Management: faturado, carteira, alocação e carteira futura contra o AR do mês.'],
     ['si-rv', 'RV', 'Faixa de NR de cada executivo no mês, marcos do trimestre, itens da campanha e a régua.'],
     ['si-base', 'Base geral', 'A base longa do P&L Restated, filtrada pelas segmentações, com download.']];
-  h += `<h2 class="sec">O índice. <span>A mesma lógica da perna Sell Out.</span></h2><div class="grid g3">` +
-    IDX.map(([pg, n, d], i) => `<a class="card idx" href="#${pg}" data-act="pg" data-pg="${pg}" style="color:inherit;text-decoration:none"><p class="eyebrow">${String(i + 1).padStart(2, '0')}</p><h4>${n}</h4><p>${d}</p><div class="go"><span style="color:var(--link)">Abrir ›</span></div></a>`).join('') + '</div>';
-  h += `<h2 class="sec">Como ler. <span>Regras da perna Sell In.</span></h2><div class="card"><ol class="num">
-    <li>As segmentações no topo valem para a perna inteira: marcar um executivo filtra também marcas, clientes, o plano do Q4 e o mês em curso. O link da página guarda o recorte.</li>
+  if (!TV.on) h += `<h2 class="sec">O índice. <span>A mesma lógica da perna Sell Out.</span></h2><div class="grid g3">` +
+    idxCli(IDX).map(([pg, n, d], i) => `<a class="card idx" href="#${pg}" data-act="pg" data-pg="${pg}" style="color:inherit;text-decoration:none"><p class="eyebrow">${String(i + 1).padStart(2, '0')}</p><h4>${n}</h4><p>${d}</p><div class="go"><span style="color:var(--link)">Abrir ›</span></div></a>`).join('') + '</div>';
+  if (!TV.on) h += `<h2 class="sec">Como ler. <span>Regras da perna Sell In.</span></h2><div class="card"><ol class="num">
+    <li>${CLI ? 'As segmentações no topo valem para a perna inteira: marcar uma marca filtra também os segmentos e as BUs.' : 'As segmentações no topo valem para a perna inteira: marcar um executivo filtra também marcas, clientes, o plano do Q4 e o mês em curso.'} O link da página guarda o recorte.</li>
     <li>O botão Excel, na barra das segmentações, baixa as tabelas da página aberta já no recorte marcado.</li>
     ${(D.regras || []).map(t => `<li>${esc(t)}</li>`).join('')}</ol></div>`;
   return h;
@@ -1413,19 +1453,21 @@ function pgSiInicio() {
 
 function pgSiGeral() {
   const op = {marcas: gMarcas(), segs: gSegs()};
-  let h = hero('Dados gerais', 'Total da carteira.', 'Sell in do CTO em NR e caixas, mês a mês; out a dez de 2026 em cinza é o plano do Q4.') + recorteTxt() + kpis(op);
-  h += `<h2 class="sec">Visão total. <span>NR e caixas num card só, com o plano do Q4.</span></h2>` + bloco('sgeral', 'Total', op);
+  let h = hero('Dados gerais', CLI ? 'O total.' : 'Total da carteira.', CLI ? esc(CLIENTE.sub_si_geral || '') : 'Sell in do CTO em NR e caixas, mês a mês; out a dez de 2026 em cinza é o plano do Q4.') + recorteTxt() + kpis(op);
+  h += `<h2 class="sec">Visão total. <span>${NR()} e caixas num card só${CLI ? '.' : ', com o plano do Q4.'}</span></h2>` + bloco('sgeral', 'Total', op);
   const r = um('rs', op), c = um('cx', op), pr = umP('rs', op), pcx = umP('cx', op);
   const tp = temPlano(pr);
-  h += `<h2 class="sec">NR por caixa. <span>Quanto vale cada caixa vendida, mês a mês.</span></h2><div class="card"><h3>R$ ${n2(ytd(r, 2026, 'rs') / ytd(c, 2026, 'cx'))} no acumulado de 2026. <span>Contra R$ ${n2(ytd(r, 2025, 'rs') / ytd(c, 2025, 'cx'))} em 2025.</span></h3>
+  const rc25 = ytd(r, 2025, 'rs') / ytd(c, 2025, 'cx');
+  h += `<h2 class="sec">${NR()} por caixa. <span>Quanto vale cada caixa ${CLI ? 'comprada' : 'vendida'}, mês a mês.</span></h2><div class="card"><h3>R$ ${n2(ytd(r, 2026, 'rs') / ytd(c, 2026, 'cx'))} no acumulado de 2026. <span>${isFinite(rc25) ? `Contra R$ ${n2(rc25)} em 2025.` : ''}</span></h3>
     <div class="tw"><table><thead><tr><th>Mês</th>${ANOS.map(y => `<th>${y}</th>`).join('')}${tp ? '<th>Plano Q4</th>' : ''}<th>26 vs 25</th></tr></thead><tbody>` +
     ate(12).map(m => { const q = y => v(r, y, m) / v(c, y, m), p = v(pr, 2026, m) / v(pcx, 2026, m);
       return `<tr><td class="b">${MESES[m - 1]}</td>${ANOS.map(y => `<td class="${y === 2026 ? 'b' : ''}">${n2(q(y))}</td>`).join('')}${tp ? `<td class="pl">${n2(p)}</td>` : ''}<td>${vc(varr(q(2026), q(2025)))}</td></tr>`; }).join('') +
     '</tbody></table></div></div>';
   const MK = dic.marca.map((m, i) => [i, `<span class="${mkCls(m)}">${tit(m)}</span>`]);
-  h += `<h2 class="sec">Marca a marca. <span>Acumulado de ${corteTxt()}; o plano do Q4 ao lado.</span></h2><div class="card">` + tabelaYTD('Marca', MK, r_ => r_[COL.marca], op) + '</div>';
-  h += `<h2 class="sec">Canal a canal. <span>Canal L2 do P&L.</span></h2><div class="card">` + tabelaYTD('Canal', dic.canal.map((x, i) => [i, tit(x)]), r_ => r_[COL.canal], op) + '</div>';
-  h += `<h2 class="sec">BU a BU. <span>Cada BU com o seu AR do Q4; a página Plano Q4 usa só Hygiene.</span></h2><div class="card">` + tabelaYTD('BU', dic.uf.map((x, i) => [i, esc(x)]), r_ => r_[COL.uf], op) + '</div>';
+  h += `<h2 class="sec">Marca a marca. <span>Acumulado de ${corteTxt()}${CLI ? '.' : '; o plano do Q4 ao lado.'}</span></h2><div class="card">` + tabelaYTD('Marca', MK, r_ => r_[COL.marca], op) + '</div>';
+  if (!CLI) h += `<h2 class="sec">Canal a canal. <span>Canal L2 do P&L.</span></h2><div class="card">` + tabelaYTD('Canal', dic.canal.map((x, i) => [i, tit(x)]), r_ => r_[COL.canal], op) + '</div>';
+  h += `<h2 class="sec">BU a BU. <span>${CLI ? 'Hygiene, Health e Nutrition.' : 'Cada BU com o seu AR do Q4; a página Plano Q4 usa só Hygiene.'}</span></h2><div class="card">` + tabelaYTD('BU', dic.uf.map((x, i) => [i, esc(x)]), r_ => r_[COL.uf], op) + '</div>';
+  if (CLI) return h;   // perfil de cliente: um cliente só, sem executivos
   h += `<h2 class="sec">Cliente a cliente. <span>Ordenado pelo NR de 2026.</span></h2><div class="card">` + tabelaYTD('Cliente', D.depara.map(d => [id('grp', d.grp), tit(d.grp), tit(d.canal)]), r_ => r_[COL.grp], op) + '</div>';
   h += `<h2 class="sec">Executivo a executivo. <span>Carteira atual de cada um, com o histórico dos clientes.</span></h2><div class="card">` + tabelaYTD('Executivo', dic.executivo.map((x, i) => [i, esc(x)]), r_ => r_[COL.executivo], op) + '</div>';
   return h;
@@ -1583,7 +1625,7 @@ function pgSiRV() {
 /* ----- Sell Out: curvas por distribuidor e por executivo (as redes compradoras ficam nas abas de Clientes) ----- */
 const abasMarcas = pg => { const si = MODO === 'si' ? 'si-' : ''; return `<div class="pills" style="margin:0 0 18px">${[['geral', 'Total'], ['veja', 'Veja'], ['vanish', 'Vanish'], ['harpic', 'Harpic'], ['finish', 'Finish'], ['hn', 'H&N']].map(([p, n]) => `<button data-act="pg" data-pg="${si + p}" class="${si + p === pg ? 'on' : ''}">${n}</button>`).join('')}</div>`; };
 const comAbasMarca = (html, pg) => { const i = html.indexOf('</section>'); return i < 0 ? abasMarcas(pg) + html : html.slice(0, i + 10) + abasMarcas(pg) + html.slice(i + 10); };
-const abasClientesSO = pg => `<div class="pills" style="margin:0 0 18px">${[['clientes', 'Distribuidores'], ['redes-col', 'Redes Colecta'], ['redes-scan', 'Redes Scanntech']].map(([p, n]) => `<button data-act="pg" data-pg="${p}" class="${p === pg ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+const abasClientesSO = pg => `<div class="pills" style="margin:0 0 18px">${pagsVis([['clientes', 'Distribuidores'], ['redes-col', 'Redes Colecta'], ['redes-scan', 'Redes Scanntech']]).filter(([p]) => p !== 'redes-scan' || !CLI || shareUF()).map(([p, n]) => `<button data-act="pg" data-pg="${p}" class="${p === pg ? 'on' : ''}">${n}</button>`).join('')}</div>`;
 const comAbas = (html, pg) => {
   const j = !SLIDE && innerWidth <= 640 ? html.indexOf('<div class="card shareuf"') : -1;   // celular: as abas vêm antes do market share por UF, que é alto
   if (j >= 0) return html.slice(0, j) + abasClientesSO(pg) + html.slice(j);
@@ -1673,7 +1715,7 @@ function montarDEX(e) {
 }
 const EX_CTO = ['VEJA', 'VANISH', 'HARPIC', 'FINISH'], EX_PAT = 0.65 + 1e-9, EZ = {t: 0, c: 0};   // patamar oficial do PBI: loja com MSL acima de 65%
 const exEhCTO = nome => EX_CTO.includes(String(nome).toUpperCase());
-const exMarcaNome = i => { const m = String(dic.marca[i]); return `<span class="${mkCls(m.toUpperCase())}">${esc(m)}</span>${exEhCTO(m) ? ' <small class="tag" data-xls="fora">CTO</small>' : ''}`; };
+const exMarcaNome = i => { const m = String(dic.marca[i]); return `<span class="${mkCls(m.toUpperCase())}">${esc(m)}</span>${exEhCTO(m) && !CLI ? ' <small class="tag" data-xls="fora">CTO</small>' : ''}`; };
 const exSegNome = g => `${esc(dic.marca[D.segMarca[g]])} · ${esc(dic.segmento[g])}`;
 const exLojaNome = (i, semCod) => esc(D.lojas[i].nome).replace(/_/g, ' · ') + (!semCod && D.nomeDup[i] ? ` <small class="ex-codl">${esc(D.lojas[i].id)}</small>` : '');   // mesmo nome em mais de uma loja: o código junto (tela, slide e Excel)
 const exSkuNome = i => esc(D.skus[i].desc || D.skus[i].cod);
@@ -2053,7 +2095,7 @@ function pgExInicio() {
     <li>Falta = Target menos Compliance: SKU do MSL que a auditoria não encontrou na loja. Impacto no MSL = pontos que o item tira ou soma no MSL total (o MSL dele contra o total, pesado pelo Target).</li>
     <li>Todas as marcas do relatório entram no total, como no PBI. As 4 marcas do CTO (Veja, Vanish, Harpic e Finish) aparecem primeiro, com a etiqueta CTO.</li>
     <li>Cliente, Executivo, UF, Canal e Ambiente filtram lojas; Marca e Segmento filtram SKUs. O link da página guarda o recorte e o mês vigente.</li></ol></div>`;
-  if ((D.fonte.obs || []).length) h += `<h2 class="sec">Como ler a base. <span>Premissas da extração do PBI.</span></h2><div class="card"><ol class="num">${D.fonte.obs.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
+  if (!TV.on && (D.fonte.obs || []).length) h += `<h2 class="sec">Como ler a base. <span>Premissas da extração do PBI.</span></h2><div class="card"><ol class="num">${D.fonte.obs.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
   return h;
 }
 
@@ -2325,7 +2367,7 @@ function montarDMI(e) {
     lojas: e.lojas, skus: e.skus, dic, L, K, segMarca, col, f: null, aud: [], audN: new Map(), audSeg: null, vis: null, nomeDup: e.lojas.map(l => nNome.get(String(l.nome)) > 1),
     chavesLoja: CH, alvo, cob, fonteMes: e.fonte_mes || {}, rs, pbi: pb, regra: e.regra || {}, achados: Array.isArray(e.achados) ? e.achados : [], fonte: fx, RG, RGL, reg: reg0,
     corte: +meses[ult >= 0 ? (parcI === ult && ult > 0 && tem[ult - 1] ? ult - 1 : ult) : M - 1], ult26: +meses[M - 1],
-    rodape: ['Reckitt · Governança CTO · MSL das lojas do canal indireto.', `Fonte: ${fx.nome || 'Colecta & Sales'} e lista oficial de lojas e SKUs do MSL. Uso interno.`]};
+    rodape: CLI ? DSO.rodape : ['Reckitt · Governança CTO · MSL das lojas do canal indireto.', `Fonte: ${fx.nome || 'Colecta & Sales'} e lista oficial de lojas e SKUs do MSL. Uso interno.`]};
 }
 const MIC = {loja: r => r[1], sku: r => r[2], marca: r => D.K.marca[r[2]], segmento: r => D.K.segmento[r[2]],
   dist: r => D.L.dist[r[1]], rede: r => D.L.rede[r[1]], executivo: r => D.L.executivo[r[1]], perfil: r => D.L.perfil[r[1]], tipo: r => D.L.tipo[r[1]], lista: r => D.L.lista[r[1]]};
@@ -2421,7 +2463,7 @@ function validadeMi() {
   const velho = fechadoFonte(f) < mesEsperado();
   return {velho, parcial: !!f.parcial, txt: `MSL até ${f.ate_txt}${f.parcial ? ` · parcial até ${String(f.ate_dia).slice(0, 5)}` : ''}${f.extraido ? ` · Colecta de ${f.extraido.slice(0, 5)}` : ''}${velho ? ` · ${faltaFonte(f).toLowerCase()}` : ''}`};
 }
-const topoMi = () => { const f = fonte('msl_indireto'); return ['MSL Indireto', f && f.extraido ? `${f.nome} de ${f.extraido.slice(0, 5)}` : '', `site de ${DSO.gerado.slice(0, 5)}`].filter(Boolean).join(' · '); };
+const topoMi = () => { const f = fonte('msl_indireto'); return [PERNA(), f && f.extraido ? `${f.nome} de ${f.extraido.slice(0, 5)}` : '', `site de ${DSO.gerado.slice(0, 5)}`].filter(Boolean).join(' · '); };
 function miNotaParcial() {
   const J = miJanela();
   return J.parc && D.parc >= 0 ? `* ${exRot(D.parc).replace('*', '')} parcial até ${D.ateDia}: a loja ainda pode completar a unidade mínima até o fim do mês; o MSL do mês só cresce até o fechamento.` : '';
@@ -2505,6 +2547,7 @@ function miRS(l, J) {   // sell out R$ da loja no distribuidor dela: o mês vige
   const v = J.v; return {mes: a[v] || 0, jan: ((a[v] || 0) + (v > 0 ? a[v - 1] || 0 : 0) + (v > 1 ? a[v - 2] || 0 : 0)) / 3};
 }
 function miTabLojas(t, J, sub, opc = {}) {   // loja a loja: MSL do mês, o mesmo mês do ano anterior, faixa, faltas, em risco e o sell out da loja
+  if (CLI) opc = {...opc, semDist: true, semExec: true};   // perfil de cliente: um distribuidor só e sem executivo
   const A = miLojas(J.idx, sub), B = J.temAnt ? miLojas(J.ant, sub) : new Map(), Mm = miMeses(MIC.loja, sub);
   let L = [...new Set([...A.keys(), ...B.keys()])].map(k => { const a = A.get(k) || {m: NaN, et: 0, ec: 0, rk: 0}, b = B.get(k) || {m: NaN}; return {k, a, m: a.m, mb: b.m, d: a.m - b.m, rs: miRS(k, J)}; });
   const q = semAcento(String(opc.busca || '').trim());
@@ -2529,7 +2572,7 @@ function miTabLojas(t, J, sub, opc = {}) {   // loja a loja: MSL do mês, o mesm
 }
 function miDetLoja(k, J) {
   const l = D.lojas[k], sub = r => r[1] === k, R = miResumo(J, sub);
-  let h = `<div class="det"><h2 class="sec">${miLojaNome(k, true)}. <span>${esc(l.rede)} · ${esc(l.dist)} · perfil ${esc(l.perfil)} · ${esc(l.tipo)} · ${esc(l.executivo)} · CNPJ ${esc(miCnpj(l.id))}.</span></h2>` + miKpis(R, J, [0, 4, 5, 6]);
+  let h = `<div class="det"><h2 class="sec">${miLojaNome(k, true)}. <span>${esc(l.rede)}${CLI ? '' : ' · ' + esc(l.dist)} · perfil ${esc(l.perfil)} · ${esc(l.tipo)}${CLI ? '' : ' · ' + esc(l.executivo)} · CNPJ ${esc(miCnpj(l.id))}.</span></h2>` + miKpis(R, J, [0, 4, 5, 6]);
   h += `<div class="card"><p class="eyebrow">MSL mês a mês da loja</p>${exCurva(miSerie(sub), J)}</div>`;
   const rs = D.rs.get(k);
   if (rs) { const o = {t: new Float64Array(D.M), c: new Float64Array(D.M)}; let mx = 0; rs.forEach(v => { mx = Math.max(mx, v); });
@@ -2572,12 +2615,12 @@ function miLeitura(J, R) {
 function pgMiInicio() {
   const J = miJanela(), R = miResumo(J);
   const side = `<div class="side">${(DSO.equipe || []).map(([cargo, nome]) => `${esc(cargo)} <span class="lk">${esc(nome)}</span>`).join('<br>')}<br>${esc(J.txt)} · compras de ${esc(J.jan)} · ${n0(R.n)} lojas medidas<br>Régua <span class="lk">${esc(miRegNome())}</span></div>`;
-  let h = hero('', 'MSL Indireto.', 'O mix mínimo nas lojas do canal indireto, mês a mês.', side);
+  let h = hero('', CLI ? 'MSL das lojas.' : 'MSL Indireto.', CLI ? esc(CLIENTE.sub_mi || '') : 'O mix mínimo nas lojas do canal indireto, mês a mês.', side);
   h += miKpis(R, J);
   h += `<h2 class="sec">A leitura. <span>Onde ganha e onde cai, calculada sobre o recorte marcado.</span></h2>` + miLeitura(J, R);
   h += `<h2 class="sec">A curva do MSL. <span>Mês a mês; cada mês já lê as compras dos 3 meses.</span></h2><div class="card"><p class="eyebrow">MSL médio das lojas · ${J.temY0 ? `${J.Y - 1} e ` : ''}${J.Y}</p>${exCurva(miSerie(), J)}${miNotaFonteCurva()}</div>`;
-  const DI = miLinhas(J, MIC.dist).filter(x => x.a.t > 0).sort((a, b) => b.nl - a.nl), Mm = miMeses(MIC.dist);
-  h += `<h2 class="sec">Os distribuidores. <span>MSL do mês e a variação contra o mesmo mês do ano anterior.</span></h2><div class="grid g3">${DI.map(x => `<a class="card" href="#mi-redes" data-act="exir" data-pg="mi-redes" data-k="seldist" data-v="${x.k}">
+  const DI = CLI ? [] : miLinhas(J, MIC.dist).filter(x => x.a.t > 0).sort((a, b) => b.nl - a.nl), Mm = CLI ? new Map() : miMeses(MIC.dist);
+  if (!CLI) h += `<h2 class="sec">Os distribuidores. <span>MSL do mês e a variação contra o mesmo mês do ano anterior.</span></h2><div class="grid g3">${DI.map(x => `<a class="card" href="#mi-redes" data-act="exir" data-pg="mi-redes" data-k="seldist" data-v="${x.k}">
     <p class="eyebrow">${miDist(x.k)}</p><div class="kpi"><div class="val" style="font-size:30px">${p1(x.m)}</div><div class="sub">${[isFinite(x.d) ? vppt(x.d) + ' sobre ' + esc(J.antTxt) : '', `${n0(x.nl)} lojas`].filter(Boolean).join(' · ')}</div></div>${exSpark(Mm.get(x.k), J)}</a>`).join('')}</div>`;
   const IDX = [['mi-dados', 'Dados gerais', 'Mês, trimestre e ano, e as abas Distribuidor, Perfil, Tipo de loja, Marca, Segmento e Lista, com o mês a mês.'],
     ['mi-diretor', 'Visão do Diretor', 'Os números do mês, os distribuidores, redes e lojas que mais puxam o MSL para baixo e as faltas que mais pesam.'],
@@ -2586,16 +2629,16 @@ function pgMiInicio() {
     ['mi-executivos', 'Executivos', 'MSL da carteira de cada executivo, a pior marca e as lojas de cada um.'],
     ['mi-skus', 'SKUs e faltas', 'Os SKUs do mix que mais faltam, marca a marca, e as lojas onde cada um falta.'],
     ['mi-auditoria', 'Auditoria do PBI', 'O número oficial do Power BI contra o recálculo loja a loja, e o que a apuração precisa corrigir.']];
-  h += `<h2 class="sec">O índice. <span>A mesma lógica do MSL Direto.</span></h2><div class="grid g3">` +
-    IDX.map(([pg, n, d], i) => `<a class="card idx" href="#${pg}" data-act="pg" data-pg="${pg}" style="color:inherit;text-decoration:none"><p class="eyebrow">${String(i + 1).padStart(2, '0')}</p><h4>${n}</h4><p>${d}</p><div class="go"><span style="color:var(--link)">Abrir ›</span></div></a>`).join('') + '</div>';
-  h += `<h2 class="sec">Como ler. <span>Regras da perna MSL Indireto.</span></h2><div class="card"><ol class="num">${(D.regra.como_ler || [
+  if (!TV.on) h += `<h2 class="sec">O índice. <span>${CLI ? 'As páginas do MSL.' : 'A mesma lógica do MSL Direto.'}</span></h2><div class="grid g3">` +
+    idxCli(IDX).map(([pg, n, d], i) => `<a class="card idx" href="#${pg}" data-act="pg" data-pg="${pg}" style="color:inherit;text-decoration:none"><p class="eyebrow">${String(i + 1).padStart(2, '0')}</p><h4>${n}</h4><p>${d}</p><div class="go"><span style="color:var(--link)">Abrir ›</span></div></a>`).join('') + '</div>';
+  if (!TV.on) h += `<h2 class="sec">Como ler. <span>Regras da perna ${esc(PERNA())}.</span></h2><div class="card"><ol class="num">${(D.regra.como_ler || [
     'Base: as lojas da lista oficial do MSL do trimestre (PDV Premiado Diamond e Gold, Lista MSL e Exclusiva) e, para cada perfil de loja, a lista oficial de SKUs exigidos.',
     'O SKU está positivado quando a loja comprou do próprio distribuidor pelo menos a unidade mínima nos 3 meses: o mês e os 2 anteriores. Por isso o MSL de cada mês já é a leitura de 3 meses.',
     'MSL da loja = SKUs positivados sobre SKUs exigidos. O MSL do recorte é a média das lojas, como o "Média de MSL" do Power BI. O ponderado soma os SKUs de todas as lojas.',
     'Lojas zeradas não compraram nenhum SKU do mix na unidade mínima: antes de mix, é cobertura. Em risco = SKU que só conta pela compra do mês mais antigo da janela.',
     'O seletor Mês vigente muda o mês do site inteiro. A comparação é sempre contra o mesmo mês do ano anterior.',
     'Distribuidor, Rede, Executivo, Perfil, Tipo de loja e Lista filtram lojas; Marca e Segmento filtram SKUs. O link da página guarda o recorte e o mês.']).map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
-  if ((D.fonte.obs || []).length) h += `<h2 class="sec">Como ler a base. <span>Premissas da extração.</span></h2><div class="card"><ol class="num">${D.fonte.obs.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
+  if (!TV.on && (D.fonte.obs || []).length) h += `<h2 class="sec">Como ler a base. <span>Premissas da extração.</span></h2><div class="card"><ol class="num">${D.fonte.obs.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
   return h;
 }
 function miNotaFonteCurva() {   // de onde vem cada mês da curva (Colecta ou MTRIX), por distribuidor do recorte
@@ -2614,11 +2657,11 @@ function miTabPeriodos(J) {
     `</tbody></table></div><p class="note" style="margin:10px 0 0">Nos períodos de mais de um mês, o MSL é a média das lojas em cada mês (como o PBI lê o trimestre); exigidos e positivados somam os meses; lojas = lojas distintas medidas no período.</p>`;
 }
 function pgMiDados() {
-  const J = miJanela(), R = miResumo(J), ab = S.ui.miab || 'dist', sub = `${miTxtMes(J)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}`;
-  let h = hero('Dados gerais', 'MSL por distribuidor, perfil, marca e segmento.', `${miTxtMes(J)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}.`) + miKpis(R, J);
+  const J = miJanela(), R = miResumo(J), ab = S.ui.miab || (CLI ? 'marca' : 'dist'), sub = `${miTxtMes(J)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}`;
+  let h = hero('Dados gerais', CLI ? 'MSL por perfil, marca e segmento.' : 'MSL por distribuidor, perfil, marca e segmento.', `${miTxtMes(J)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}.`) + miKpis(R, J);
   h += `<h2 class="sec">Mês, trimestre e ano. <span>Os totais para conferir com o PBI.</span></h2><div class="card"><p class="eyebrow">Totais por período</p>${miTabPeriodos(J)}</div>`;
   const AB = [['dist', 'Distribuidor', MIC.dist, k => miDist(k)], ['perfil', 'Perfil da loja', MIC.perfil, k => esc(dic.perfil[k])], ['tipo', 'Tipo de loja', MIC.tipo, k => esc(dic.tipo[k])],
-    ['marca', 'Marca', MIC.marca, exMarcaNome], ['segmento', 'Segmento', MIC.segmento, exSegNome], ['lista', 'Lista', MIC.lista, k => esc(dic.lista[k])]];
+    ['marca', 'Marca', MIC.marca, exMarcaNome], ['segmento', 'Segmento', MIC.segmento, exSegNome], ['lista', 'Lista', MIC.lista, k => esc(dic.lista[k])]].filter(x => !CLI || x[0] !== 'dist');
   h += `<div class="pills" style="margin:28px 0 0">${AB.map(([k, n]) => `<button data-act="ui" data-k="miab" data-v="${k}" class="${k === ab ? 'on' : ''}">${n}</button>`).join('')}</div>`;
   const TT = {dist: 'Distribuidor a distribuidor', perfil: 'Perfil a perfil', tipo: 'Tipo de loja', marca: 'Marca a marca', segmento: 'Segmento a segmento', lista: 'Lista a lista'};
   const TR = miTotalRecorte(J), ST = miSerie();
@@ -2633,21 +2676,22 @@ function pgMiDados() {
 }
 function pgMiDiretor() {
   const J = miJanela(), R = miResumo(J);
-  let h = hero('Visão do Diretor', 'O mix do canal indireto em uma página.', `${miTxtMes(J)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}.`) + miKpis(R, J, [0, 2, 3, 4]);
+  let h = hero('Visão do Diretor', CLI ? 'O mix das lojas em uma página.' : 'O mix do canal indireto em uma página.', `${miTxtMes(J)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}.`) + miKpis(R, J, [0, 2, 3, 4]);
   const DI = miLinhas(J, MIC.dist).filter(x => x.a.t > 0).sort((a, b) => a.imp - b.imp);
   const RD = miLinhas(J, MIC.rede).filter(x => x.a.t > 0 && x.nl >= 3).sort((a, b) => a.imp - b.imp).slice(0, 5);
   const LO = [...miLojas(J.idx).entries()].map(([k, o]) => ({k, ...o, rs: miRS(k, J)})).filter(x => x.ec === 0 && x.rs.jan > 0).sort((a, b) => b.rs.jan - a.rs.jan).slice(0, 8);
   h += `<h2 class="sec">Quem puxa para baixo. <span>Impacto = pontos que o item tira do MSL total: o MSL dele contra o total, pesado pelas lojas.</span></h2>
-    <div class="card"><p class="eyebrow">Distribuidores</p>${miTabJanela('mdd', 'Distribuidor', DI, k => miDist(k), J, {compacto: true})}</div>
-    <div class="card"><p class="eyebrow">As 5 redes (3 lojas ou mais)</p>${miTabJanela('mdr', 'Rede', RD, k => esc(dic.rede[k]), J, {compacto: true, extra: [{c: 'Distribuidor', l: true, h: x => esc([...new Set(D.lojas.filter((_, i) => D.L.rede[i] === x.k).map(l => l.dist))].join(', '))}]})}</div>
+    ${CLI ? '' : `<div class="card"><p class="eyebrow">Distribuidores</p>${miTabJanela('mdd', 'Distribuidor', DI, k => miDist(k), J, {compacto: true})}</div>`}
+    <div class="card"><p class="eyebrow">As 5 redes (3 lojas ou mais)</p>${miTabJanela('mdr', 'Rede', RD, k => esc(dic.rede[k]), J, {compacto: true, extra: CLI ? [] : [{c: 'Distribuidor', l: true, h: x => esc([...new Set(D.lojas.filter((_, i) => D.L.rede[i] === x.k).map(l => l.dist))].join(', '))}]})}</div>
     <div class="card"><p class="eyebrow">Compram e estão zeradas · as 8 que mais compram</p>${exTabela('mdl', LO, [{c: 'Loja', l: true, b: true, k: 'nm', h: x => `<button class="lnk" data-act="exir" data-pg="mi-lojas" data-k="selloja" data-v="${x.k}">${miLojaNome(x.k)}</button>`},
-      {c: 'Rede', l: true, h: x => esc(D.lojas[x.k].rede)}, {c: 'Distribuidor', l: true, h: x => esc(D.lojas[x.k].dist)}, {c: 'Perfil', l: true, h: x => esc(D.lojas[x.k].perfil)},
+      {c: 'Rede', l: true, h: x => esc(D.lojas[x.k].rede)}, ...(CLI ? [] : [{c: 'Distribuidor', l: true, h: x => esc(D.lojas[x.k].dist)}]), {c: 'Perfil', l: true, h: x => esc(D.lojas[x.k].perfil)},
       {c: 'Sell out médio · 3 meses', b: true, h: x => miRs(x.rs.jan)}, {c: 'SKUs exigidos', h: x => n0(x.et)}])}
       <p class="note" style="margin:10px 0 0">Loja que compra do distribuidor e não tem nenhum SKU do mix na unidade mínima: a oportunidade mais rápida de MSL, porque o pedido já existe.</p></div>`;
   const SK = miLinhas(J, MIC.sku).filter(x => x.f > 0).sort((a, b) => b.f - a.f).slice(0, 5);
   h += `<h2 class="sec">As faltas que mais pesam. <span>Os 5 SKUs que mais faltam em ${esc(J.txt)}.</span></h2><div class="card"><p class="eyebrow">SKUs com mais faltas</p>${exTabela('mds', SK, [
     {c: 'SKU', l: true, b: true, k: 'sk', h: x => `<button class="lnk" data-act="exir" data-pg="mi-skus" data-k="selsku" data-v="${x.k}">${exSkuNome(x.k)}</button>`}, {c: 'Marca', l: true, h: x => exMarcaNome(D.K.marca[x.k])},
     {c: 'Segmento', l: true, h: x => esc(dic.segmento[D.K.segmento[x.k]])}, {c: 'Lojas onde falta', b: true, h: x => n0(x.f)}, {c: 'Lojas que exigem', h: x => n0(x.a.et)}, {c: 'Peso nas faltas', h: x => p1(x.peso)}, {c: 'Presença', h: x => p1(x.w)}])}</div>`;
+  if (CLI) return h;   // perfil de cliente: distribuidor x marca é a tabela de marca dos Dados gerais
   const CM = EX_CTO.map(n => dic.marca.findIndex(m => String(m).toUpperCase() === n)).filter(i => i >= 0), ch = r => D.L.dist[r[1]] * 64 + D.K.marca[r[2]];
   const A = miAgr(J.idx, ch), B = J.temAnt ? miAgr(J.ant, ch) : new Map(), AT = miAgr(J.idx, MIC.dist), BT = J.temAnt ? miAgr(J.ant, MIC.dist) : new Map(), AM = miAgr(J.idx, MIC.marca), BM = J.temAnt ? miAgr(J.ant, MIC.marca) : new Map();
   const ds = [...AT.keys()].sort((a, b) => (msl(AT.get(b)) || -1) - (msl(AT.get(a)) || -1)), tA = miUm(J.idx), tB = J.temAnt ? miUm(J.ant) : EZM;
@@ -2660,10 +2704,11 @@ function pgMiDiretor() {
 }
 function pgMiRedes() {
   const J = miJanela(), DI = miLinhas(J, MIC.dist).filter(x => x.a.t > 0 || x.b.t > 0).sort((a, b) => b.nl - a.nl), Md = miMeses(MIC.dist);
-  let h = hero('Distribuidores e redes', 'MSL por distribuidor e por rede.', miConclusao(DI, k => miDist(k), J, 'distribuidores'), '', `${miTxtMes(J)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}. Clique no nome para abrir.`);
-  h += `<h2 class="sec">Distribuidor a distribuidor. <span>As lojas da lista de cada distribuidor.</span></h2><div class="card"><p class="eyebrow">Distribuidores · mês vigente</p>${miTabJanela('mrd', 'Distribuidor', DI, k => miDist(k), J, {sel: 'seldist', spark: Md,
+  let h = CLI ? hero('Redes', 'MSL por rede.', miConclusao(miLinhas(J, MIC.rede).filter(x => x.a.t > 0 || x.b.t > 0), k => esc(dic.rede[k]), J, 'redes'), '', `${miTxtMes(J)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}. Clique no nome para abrir.`)
+    : hero('Distribuidores e redes', 'MSL por distribuidor e por rede.', miConclusao(DI, k => miDist(k), J, 'distribuidores'), '', `${miTxtMes(J)}${J.temAnt ? ` contra ${esc(J.antTxt)}` : ''}. Clique no nome para abrir.`);
+  if (!CLI) h += `<h2 class="sec">Distribuidor a distribuidor. <span>As lojas da lista de cada distribuidor.</span></h2><div class="card"><p class="eyebrow">Distribuidores · mês vigente</p>${miTabJanela('mrd', 'Distribuidor', DI, k => miDist(k), J, {sel: 'seldist', spark: Md,
     extra: [{c: 'Executivo', l: true, h: x => esc([...new Set(D.lojas.filter((_, i) => D.L.dist[i] === x.k).map(l => l.executivo))].join(', '))}]})}</div>`;
-  const kd = exSelValido('seldist', DI);
+  const kd = CLI ? null : exSelValido('seldist', DI);
   if (kd !== null) {
     const sub = r => D.L.dist[r[1]] === kd, nome = miDist(kd), LM = miOrdemMarcas(miLinhas(J, MIC.marca, sub).filter(x => x.a.t > 0 || x.b.t > 0));
     const RDd = miLinhas(J, MIC.rede, sub).filter(x => x.a.t > 0 || x.b.t > 0).sort((a, b) => b.nl - a.nl || a.m - b.m);
@@ -2677,7 +2722,7 @@ function pgMiRedes() {
   const RD = miLinhas(J, MIC.rede).filter(x => (x.a.t > 0 || x.b.t > 0) && Math.max(x.nl, x.nlb) >= (S.ui.mitodas ? 1 : 2)).sort((a, b) => b.nl - a.nl || a.m - b.m), Mr = miMeses(MIC.rede);
   h += `<h2 class="sec">Rede a rede. <span>${S.ui.mitodas ? 'Todas as redes, inclusive as de 1 loja.' : 'Redes com 2 lojas ou mais na lista.'} <button class="lnk" data-act="ui" data-k="mitodas" data-v="${S.ui.mitodas ? '' : '1'}">${S.ui.mitodas ? 'Só redes com 2 lojas ou mais' : 'Ver todas as redes'}</button></span></h2>` + exTermo(RD.map(x => x.d)) +
     `<div class="card"><p class="eyebrow">Redes · mês vigente</p>${miTabJanela('mrr', 'Rede', RD, k => esc(dic.rede[k]), J, {sel: 'selrede', spark: Mr,
-      extra: [{c: 'Distribuidor', l: true, h: x => esc([...new Set(D.lojas.filter((_, i) => D.L.rede[i] === x.k).map(l => l.dist))].join(', '))}]})}</div>`;
+      extra: CLI ? [] : [{c: 'Distribuidor', l: true, h: x => esc([...new Set(D.lojas.filter((_, i) => D.L.rede[i] === x.k).map(l => l.dist))].join(', '))}]})}</div>`;
   const kr = exSelValido('selrede', RD);
   if (kr !== null) {
     const sub = r => D.L.rede[r[1]] === kr, nome = esc(dic.rede[kr]), LM = miOrdemMarcas(miLinhas(J, MIC.marca, sub).filter(x => x.a.t > 0 || x.b.t > 0));
@@ -2696,7 +2741,7 @@ function pgMiLojas() {
   const concl = A.size ? `${n0(c[3])} de ${n0(A.size)} lojas medidas ficam acima de 50% e ${n0(c[0])} estão zeradas${menor ? `; entre as que compram algum SKU do mix, a menor é ${miLojaNome(menor[0])} (${p1(menor[1].m)})` : ''}.` : `Sem lojas medidas em ${esc(J.txt)}.`;
   let h = hero('Lojas', 'MSL loja a loja.', concl, '', `${miTxtMes(J)}, do menor para o maior MSL, contra a própria loja${J.temAnt ? ` em ${esc(J.antTxt)}` : ''}.`);
   h += `<h2 class="sec">As faixas. <span>MSL da loja no mês.</span></h2><div class="termo"><span class="vbig down">${n0(c[0])} zeradas</span><span class="vbig down">${n0(c[1])} até 25%</span><span class="vbig warn">${n0(c[2])} de 25% a 50%</span><span class="vbig up">${n0(c[3])} acima de 50%</span>${sem > 0 ? `<span class="vbig flat">${n0(sem)} sem dado no mês</span>` : ''}</div>`;
-  h += `<h2 class="sec">Loja a loja. <span>Busque pelo nome, CNPJ, rede ou distribuidor.</span></h2><div class="card"><p class="eyebrow">Lojas · mês vigente</p><div class="pills" style="margin:6px 0 0">${buscaRede('mibusca', S.ui.mibusca, 'Buscar loja, CNPJ, rede ou distribuidor')}</div><div id="mi-lojas-tab">${miLojasPrincipal()}</div></div>`;
+  h += `<h2 class="sec">Loja a loja. <span>Busque pelo nome, CNPJ${CLI ? ' ou rede' : ', rede ou distribuidor'}.</span></h2><div class="card"><p class="eyebrow">Lojas · mês vigente</p><div class="pills" style="margin:6px 0 0">${buscaRede('mibusca', S.ui.mibusca, CLI ? 'Buscar loja, CNPJ ou rede' : 'Buscar loja, CNPJ, rede ou distribuidor')}</div><div id="mi-lojas-tab">${miLojasPrincipal()}</div></div>`;
   const Ls = [...new Set([...A.keys()])].map(k => ({k}));
   const k = exSelValido('selloja', Ls.length ? Ls : D.lojas.map((_, i) => ({k: i})));
   if (k !== null) h += miDetLoja(k, J);
@@ -2747,8 +2792,8 @@ function pgMiSkus() {
     h += `<div class="det"><h2 class="sec">${exSkuNome(k)}. <span>${esc(D.skus[k].marca)} · ${esc(D.skus[k].segmento)} · EAN ${esc(D.skus[k].cod)}: as ${n0(LL.length)} lojas onde falta, da que mais compra do distribuidor para a que menos compra.</span></h2>` +
       `<div class="card"><p class="eyebrow">Lojas onde o SKU falta · ${esc(J.txt)}</p>${exTabela('misl', LL, [
         {c: 'Loja', l: true, b: true, k: 'nm', h: x => `<button class="lnk" data-act="exir" data-pg="mi-lojas" data-k="selloja" data-v="${x.k}">${miLojaNome(x.k)}</button>`},
-        {c: 'Rede', l: true, h: x => esc(D.lojas[x.k].rede)}, {c: 'Distribuidor', l: true, h: x => esc(D.lojas[x.k].dist)}, {c: 'Perfil', l: true, h: x => esc(D.lojas[x.k].perfil)},
-        {c: 'Sell out médio · 3 meses', b: true, h: x => (x.rs.jan ? miRs(x.rs.jan) : '')}, {c: 'Executivo', l: true, h: x => esc(D.lojas[x.k].executivo)}])}</div>` +
+        {c: 'Rede', l: true, h: x => esc(D.lojas[x.k].rede)}, ...(CLI ? [] : [{c: 'Distribuidor', l: true, h: x => esc(D.lojas[x.k].dist)}]), {c: 'Perfil', l: true, h: x => esc(D.lojas[x.k].perfil)},
+        {c: 'Sell out médio · 3 meses', b: true, h: x => (x.rs.jan ? miRs(x.rs.jan) : '')}, ...(CLI ? [] : [{c: 'Executivo', l: true, h: x => esc(D.lojas[x.k].executivo)}])])}</div>` +
       `<div class="card"><p class="eyebrow">SKU · presença mês a mês</p>${exCurva(exSerie(sub), J)}</div></div>`;
   }
   return h;
@@ -2918,17 +2963,17 @@ function montarDNI(n) {
   const fx = n.fonte || {};
   return {M, meses: n.meses.map(String), dic, cats: n.cats, por, bench, bgeos: (n.bench || {}).geos || [], skItens: sk.itens || [], skf, canalTxt: n.canal_txt || {}, segTxt: n.seg_txt || {}, fonte: fx,
     tem: n.meses.map(() => true), parc: -1, ateDia: '', corte: +n.meses[M - 1], ult26: +n.meses[M - 1], gerado: DSO.gerado,
-    rodape: ['Reckitt · Governança CTO · Nielsen e IQVIA: mercado e share da Reckitt nas categorias da base do CMI.', `Fonte: ${fx.nome || 'base do CMI'}. Dado licenciado, uso interno.`]};
+    rodape: CLI ? DSO.rodape : ['Reckitt · Governança CTO · Nielsen e IQVIA: mercado e share da Reckitt nas categorias da base do CMI.', `Fonte: ${fx.nome || 'base do CMI'}. Dado licenciado, uso interno.`]};
 }
 const NIM = () => MODO === 'ni';
 const titTxt = s => String(s).toLowerCase().replace(/(^|[\s(+.\-/&])([a-zà-ú])/g, (m, a, b) => a + b.toUpperCase());   // nome em texto puro (o esc vem depois)
 const niCat = () => D.cats[S.niCat] || D.cats[0];
 const niIni = (ci = S.niCat) => (D.cats[ci] && D.cats[ci].ini) || 0;   // primeiro mês com dado da categoria
-const niGeoDe = (c, g = S.niGeo) => (c.geo_txt[g] ? g : 'CTO');   // UF escolhida numa categoria que só abre por área: lê a Área VII
+const niGeoDe = (c, g = S.niGeo) => (c.geo_txt[g] ? g : NI_GEO0());   // UF escolhida numa categoria que só abre por área: lê a Área VII
 const niGeoEf = (c = niCat()) => niGeoDe(c);
 const niGeoTxt = (g = niGeoEf(), c = niCat()) => c.geo_txt[g] || g;
 const niNaGeo = (g = niGeoEf(), c = niCat()) => (g === 'BR' ? 'no Brasil' : g === 'CTO' ? (c.abre === 'area' ? 'na Área VII (Centro-Oeste)' : 'na região CTO (DF, GO, MT, MS e TO/PA/AP)')
-  : g === 'CO' ? 'no Centro-Oeste (DF, GO, MT e MS)' : g === 'TO_PA_AP' ? 'em TO, PA e AP' : 'em ' + g);
+  : g === 'CO' ? 'no Centro-Oeste (DF, GO, MT e MS)' : g === 'TO_PA_AP' ? 'em TO, PA e AP' : (CLI && g === CLIENTE.geo ? 'no ' : 'em ') + g);
 const niGi = g => D.dic.geo.indexOf(g);
 const niUn = (c = niCat()) => c.un || 'Unidades';
 const niMedNome = () => (S.niMed === 1 ? niUn() : 'Valor (R$)');
@@ -2950,7 +2995,7 @@ const niFocoNome = () => { if (!niFocoAtivo()) return 'Reckitt';   // texto puro
 const niFocoDe = () => (niFocoAtivo() ? 'de ' + niFocoNome() : 'da Reckitt');   // "o share da Reckitt", "o share de Veja"
 const niMkTxt = (c = niCat()) => (S.f.segmento.size ? 'segmentos do filtro' : (c.fora_padrao || []).length && S.niMk !== 'total' ? `sem ${(c.fora_padrao || []).map(titTxt).join(', ')}` : 'categoria inteira');
 const niCap = s => String(s).charAt(0).toUpperCase() + String(s).slice(1);
-const niGeoCats = (g = S.niGeo) => (g === 'BR' ? 'no Brasil' : g === 'CTO' || !g ? 'na Área VII nas categorias por área e na região CTO nas categorias por UF'
+const niGeoCats = (g = S.niGeo) => (CLI ? niNaGeo(niGeoDe(niCat(), g)) : g === 'BR' ? 'no Brasil' : g === 'CTO' || !g ? 'na Área VII nas categorias por área e na região CTO nas categorias por UF'
   : `${niNaGeo(g, D.cats.find(c => c.abre === 'uf') || niCat())} nas categorias por UF e na Área VII nas categorias por área`);   // o título de quem mostra todas as categorias
 
 function niLinhas(ci, g, opc = {}) {   // linhas da categoria na geografia, no mercado do recorte (Canal e Segmento; Superfícies sem Desinfetante no padrão)
@@ -3172,7 +3217,7 @@ function niCartaoCat(i, J0) {   // um cartão por categoria: share da Reckitt no
 function pgNiInicio() {
   const J = niJanela(), c = niCat(), g = niGeoEf(), rows = niLinhas(S.niCat, g), rowsBR = g === 'BR' ? null : niLinhas(S.niCat, 'BR'), o = niSerie(rows), oBR = rowsBR ? niSerie(rowsBR) : null;
   const side = `<div class="side">${(DSO.equipe || []).map(([cargo, nome]) => `${esc(cargo)} <span class="lk">${esc(nome)}</span>`).join('<br>')}<br>${esc(c.nome)} · ${esc(niGeoTxt())}<br>Mês ${esc(J.txt)} · ${esc(niMedNome())} · foco <span class="lk">${esc(niFocoNome())}</span></div>`;
-  let h = hero('', 'Nielsen.', 'Mercado e share da Reckitt nas categorias Nielsen e IQVIA, mês a mês.', side);
+  let h = hero('', 'Nielsen.', CLI ? esc(CLIENTE.sub_ni || '') : 'Mercado e share da Reckitt nas categorias Nielsen e IQVIA, mês a mês.', side);
   h += niAvisoGeo() + niOpcBar(false);
   h += `<h2 class="sec">${esc(c.nome)} em números. <span>${esc(niCap(niNaGeo(g)))}, ${esc(niMkTxt())}; share de período = média das shares mensais.</span></h2>` + niKpis(o, J, oBR);
   const X = J.P.tri;
@@ -3188,9 +3233,13 @@ function pgNiInicio() {
     ['ni-geografia', 'Geografia', 'A região CTO contra as outras áreas e UFs e o Brasil.'],
     ['ni-skus', 'SKUs', 'Os SKUs da Reckitt e os maiores da concorrência na região CTO.'],
     ['ni-mes', 'Mês a mês', 'Mercado, Reckitt e share mês a mês, marca a marca.']];
-  h += `<h2 class="sec">O índice. <span>As páginas da perna Nielsen.</span></h2><div class="grid g3">` +
-    IDX.map(([pg, n, d], i) => `<a class="card idx" href="#${pg}" data-act="pg" data-pg="${pg}" style="color:inherit;text-decoration:none"><p class="eyebrow">${String(i + 1).padStart(2, '0')}</p><h4>${n}</h4><p>${d}</p><div class="go"><span style="color:var(--link)">Abrir ›</span></div></a>`).join('') + '</div>';
-  h += `<h2 class="sec">Como ler. <span>Regras da perna Nielsen.</span></h2><div class="card"><ol class="num">${[
+  if (!TV.on) h += `<h2 class="sec">O índice. <span>As páginas da perna Nielsen.</span></h2><div class="grid g3">` +
+    idxCli(IDX).map(([pg, n, d], i) => `<a class="card idx" href="#${pg}" data-act="pg" data-pg="${pg}" style="color:inherit;text-decoration:none"><p class="eyebrow">${String(i + 1).padStart(2, '0')}</p><h4>${n}</h4><p>${d}</p><div class="go"><span style="color:var(--link)">Abrir ›</span></div></a>`).join('') + '</div>';
+  if (!TV.on) h += `<h2 class="sec">Como ler. <span>Regras da perna Nielsen.</span></h2><div class="card"><ol class="num">${(CLI ? [...(D.fonte.obs || []),
+    'Categoria é um seletor único: categorias diferentes são mercados diferentes e não se somam.',
+    'Canal e Segmento definem o mercado. Fabricante e Marca trocam o foco: sem eles, o foco é a Reckitt; com eles, o share passa a ser o do fabricante ou da marca marcados.',
+    'O seletor Mês muda o site inteiro. A comparação é sempre contra o mesmo período do ano anterior.',
+    'Os meses têm 4 ou 5 semanas, conforme o calendário do ano: compare com o mesmo mês do ano anterior.'] : [
     'Fonte: a base mensal do time de CMI, com Nielsen (Superfícies, Alvejantes seguros, Sanitário e Lava-louças) e IQVIA (Complementos nutricionais, Preservativos e Lubrificantes). Dado licenciado: uso interno.',
     'Categoria e Geografia são seletores únicos: categorias diferentes são mercados diferentes e não se somam.',
     'Superfícies e Alvejantes seguros só abrem até a Área VII, o recorte Nielsen do Centro-Oeste. Sanitário, Lava-louças e IQVIA abrem por UF; a região CTO soma DF, GO, MT, MS e o bloco TO, PA e AP, que vem junto na base. Para comparar com a Área VII, use Centro-Oeste.',
@@ -3199,7 +3248,7 @@ function pgNiInicio() {
     'Em Superfícies, o padrão do site é o mercado sem Desinfetante, segmento praticamente sem marca Reckitt; o botão Categoria inteira inclui o Desinfetante.',
     'O seletor Mês muda o site inteiro. A comparação é sempre contra o mesmo período do ano anterior; no mês e no trimestre, também contra o período anterior. Sanitário, Lava-louças e IQVIA só têm dado a partir de jul/24 ou ago/24.',
     'Marcas e fabricantes com menos de 0,4% do mercado de 12 meses viram Outras marcas e Outros fabricantes; a Reckitt fica sempre aberta. Lysoform (SC Johnson) e K-Y não entram como Reckitt.',
-    'Unidades: Superfícies e Alvejantes trazem unidades; as outras categorias trazem o volume, que é sempre unidade (o da IQVIA vem em milhares e o site multiplica por 1.000). Os meses têm 4 ou 5 semanas, conforme o calendário do ano: compare com o mesmo mês do ano anterior.'].map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
+    'Unidades: Superfícies e Alvejantes trazem unidades; as outras categorias trazem o volume, que é sempre unidade (o da IQVIA vem em milhares e o site multiplica por 1.000). Os meses têm 4 ou 5 semanas, conforme o calendário do ano: compare com o mesmo mês do ano anterior.']).map(x => `<li>${esc(x)}</li>`).join('')}</ol></div>`;
   return h;
 }
 function pgNiCategorias() {
@@ -3327,7 +3376,7 @@ function linhasRecorte() {
   if (busca) L.push(['Busca na tabela', busca]);
   L.push([MODO === 'so' && fontesDaPagina().length ? 'Site publicado em' : 'Base atualizada em', D.gerado]);
   if (MODO === 'so') fontesDaPagina().forEach(f => L.push([`Fonte ${f.nome}`, `${quandoFonte(f)}${f.hora ? ' (extração às ' + f.hora + ')' : ''}${f.obs ? '. ' + f.obs : ''}`]));
-  if (MODO === 'si') {
+  if (MODO === 'si' && !CLI) {
     const bus = S.f.uf.size ? [...S.f.uf].map(i => dic.uf[i]).join(', ') : 'Hygiene, Health e Nutrition';
     L.push(['Order Management', omData()], ['Plano do Q4', S.page === 'si-q4' ? 'AR oficial de 29/09, só Hygiene (base da régua do Q4)' : `AR oficial de 29/09 das BUs do recorte (${bus}); a página Plano Q4 usa só Hygiene`]);
   }
@@ -3344,7 +3393,7 @@ async function exportarExcel(btn) {
     const nomePg = PAGES.find(p => p[0] === S.page)[1], busca = {'redes-scan': S.ui.scbusca, 'redes-col': S.ui.clbusca, confronto: S.ui.cbusca, 'ex-lojas': S.ui.exbusca, 'mi-lojas': S.ui.mibusca}[S.page];
     const resumo = [...FILTROS.filter(([k]) => S.f[k].size).map(([k, n]) => `${n}: ${[...S.f[k]].map(i => (NIM() && k === 'segmento' ? niSegTxt(i) : dic[k][i])).join(', ')}`), ...(busca ? [`Busca: ${busca}`] : [])].join(' · ') || 'Sem recorte';
     const nota = `${PERNA()} · ${nomePg} · ${MODO === 'ex' ? 'janela ' + exJanela().txt : MODO === 'mi' ? 'mês ' + miJanela().txt : MODO === 'ni' ? niRecSlide() : 'corte ' + corteRot()} · ${resumo}`;
-    const abas = [{nome: 'Recorte', titulo: `Governança CTO · ${PERNA()} · ${nomePg}`, nota: 'Recorte marcado no site no momento da exportação.', cab: [['Item', 'Valor']], linhas: linhasRecorte()}];
+    const abas = [{nome: 'Recorte', titulo: `${NOME_SITE()} · ${PERNA()} · ${nomePg}`, nota: 'Recorte marcado no site no momento da exportação.', cab: [['Item', 'Valor']], linhas: linhasRecorte()}];
     if (S.page === 'base' || S.page === 'si-base') {
       const B = linhasBase();
       abas.push({nome: 'Base do recorte', titulo: 'Base do recorte', nota, cab: [CAB()], linhas: B.map(r => celulas(r).map((x, i) => (i < 2 ? {v: x, s: 7} : typeof x === 'number' ? {v: x, s: i === 15 ? 2 : 4} : x)))});
@@ -3365,7 +3414,7 @@ async function exportarExcel(btn) {
     if (abas.length === 1) abas[0].linhas.push(['Observação', 'Esta página não tem tabela; o recorte segue registrado acima.']);
     const blob = await gerarXlsx(abas);
     const a = document.createElement('a'), d0 = new Date(), data = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
-    a.href = URL.createObjectURL(blob); a.download = `Governanca_CTO_${MODO === 'ex' ? 'MSLDireto' : MODO === 'mi' ? 'MSLIndireto' : MODO === 'ni' ? 'Nielsen' : T('SellOut', 'SellIn')}_${semAcento(nomePg).replace(/[^a-z0-9]+/g, '_')}_${data}.xlsx`;
+    a.href = URL.createObjectURL(blob); a.download = `${CLI ? semAcento(NOME_SITE()).replace(/[^a-z0-9]+/g, '_') : 'Governanca_CTO'}_${MODO === 'ex' ? 'MSLDireto' : MODO === 'mi' ? 'MSLIndireto' : MODO === 'ni' ? 'Nielsen' : T('SellOut', 'SellIn')}_${semAcento(nomePg).replace(/[^a-z0-9]+/g, '_')}_${data}.xlsx`;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     btn.textContent = 'Excel baixado';
   } catch (e) { btn.textContent = 'Não deu para gerar'; console.error(e); }
@@ -3420,13 +3469,13 @@ function gruposDaPagina() {
 }
 function recorteSlide() {   // o resumo já sai escapado (tit); soma a busca digitada na tabela, como no Excel
   const busca = {'redes-scan': S.ui.scbusca, 'redes-col': S.ui.clbusca, confronto: S.ui.cbusca, 'ex-lojas': S.ui.exbusca, 'mi-lojas': S.ui.mibusca}[S.page];
-  return [recorteResumo(), busca ? 'Busca: ' + esc(busca) : ''].filter(Boolean).join(' · ') || 'Visão completa da regional, sem filtro';
+  return [recorteResumo(), busca ? 'Busca: ' + esc(busca) : ''].filter(Boolean).join(' · ') || `Visão completa${CLI ? '' : ' da regional'}, sem filtro`;
 }
 function moldeSlide(nomePg, titulo, sub) {
   const s = document.createElement('div'); s.className = 'slide';
-  s.innerHTML = `<div class="s-top"><img src="assets/reckitt_logo.png" alt="Reckitt"><b>Governança CTO</b><span>${PERNA()} · ${esc(nomePg)}</span><span class="s-rec">${recorteSlide()} · ${MODO === 'ex' ? 'janela ' + esc(exJanela().txt) : MODO === 'mi' ? 'mês ' + esc(miJanela().txt) + ' · régua ' + esc(miRegNome()) : MODO === 'ni' ? esc(niRecSlide()) : 'corte ' + esc(corteRot())}</span></div>
+  s.innerHTML = `<div class="s-top"><img src="assets/reckitt_logo.png" alt="Reckitt"><b>${esc(NOME_SITE())}</b><span>${PERNA()} · ${esc(nomePg)}</span><span class="s-rec">${recorteSlide()} · ${MODO === 'ex' ? 'janela ' + esc(exJanela().txt) : MODO === 'mi' ? 'mês ' + esc(miJanela().txt) + ' · régua ' + esc(miRegNome()) : MODO === 'ni' ? esc(niRecSlide()) : 'corte ' + esc(corteRot())}</span></div>
     ${titulo ? `<div class="s-tit"><h2>${esc(titulo)}. <span>${esc(sub)}</span></h2></div>` : ''}<div class="s-corpo"><div class="s-escala"></div></div>
-    <div class="s-pe"><span>${MODO === 'so' && fontesDaPagina().length ? esc(fontesDaPagina().filter(f => !f.congelada).map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : MODO === 'ex' && fontesEx().length ? esc(fontesEx().map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : MODO === 'mi' && fontesMi().length ? esc(fontesMi().map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : MODO === 'ni' && fontesNi().length ? esc(fontesNi().map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : `Atualizado em ${esc(D.gerado.split(' ')[0])}`}${MODO === 'si' && D.om ? ` · pedidos de ${omData()}` : ''} · uso interno</span><span class="s-num"></span></div>`;
+    <div class="s-pe"><span>${MODO === 'so' && fontesDaPagina().length ? esc(fontesDaPagina().filter(f => !f.congelada).map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : MODO === 'ex' && fontesEx().length ? esc(fontesEx().map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : MODO === 'mi' && fontesMi().length ? esc(fontesMi().map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : MODO === 'ni' && fontesNi().length ? esc(fontesNi().map(f => `${f.nome} ${quandoFonte(f, true)}`).join(' · ')) : `Atualizado em ${esc(D.gerado.split(' ')[0])}`}${MODO === 'si' && D.om ? ` · pedidos de ${omData()}` : ''} · ${CLI ? esc(CLIENTE.slide_pe || '') : 'uso interno'}</span><span class="s-num"></span></div>`;
   return s;
 }
 function encaixar(s) {   // mede, aplica a escala e mede de novo (gráfico e tabela mudam de altura quando a largura muda)
@@ -3513,6 +3562,13 @@ document.addEventListener('click', e => {
   else if (a === 'sair') fecharApresentacao(); else if (a === 'pdf') { const prontos = APRES.slides; fecharApresentacao(true); gerarPDF(null, prontos); }
 });
 document.addEventListener('keydown', e => {
+  if (TV.on) {   // Modo TV: Esc sai, espaço pausa, setas trocam de página
+    if (e.key === 'Escape') fecharTV();
+    else if (e.key === ' ') { e.preventDefault(); TV.pausa = !TV.pausa; tvTag(); }
+    else if (['ArrowRight', 'PageDown'].includes(e.key)) { e.preventDefault(); tvIr(TV.i + 1); }
+    else if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); tvIr(TV.i - 1); }
+    return;
+  }
   if (!APRES) return;
   if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); mostrarSlide(APRES.i + 1); }
   else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); mostrarSlide(APRES.i - 1); }
@@ -3530,7 +3586,7 @@ function gerarPDF(btn, prontos) {
   } else slides = montarSlides();
   const titulo0 = document.title, d0 = new Date(), nomePg = PAGES.find(p => p[0] === S.page)[1];
   const rc = FILTROS.filter(([k]) => S.f[k].size).map(([k]) => [...S.f[k]].map(i => dic[k][i]).join('+')).join(' · ').replace(/[\/:*?"<>|]/g, '').slice(0, 60);
-  document.title = `Governança CTO · ${PERNA()} · ${nomePg}${rc ? ' · ' + rc : ''} · ${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
+  document.title = `${NOME_SITE()} · ${PERNA()} · ${nomePg}${rc ? ' · ' + rc : ''} · ${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
   const css = document.createElement('style'); css.id = 'estilo-pdf'; css.textContent = '@page { size: 13.333in 7.5in; margin: 0; }';
   document.head.appendChild(css); document.body.classList.add('imprimindo');
   let feito = false;
@@ -3541,6 +3597,97 @@ function gerarPDF(btn, prontos) {
   Promise.all(imgs).then(() => setTimeout(() => { window.print(); setTimeout(fim, 1500); }, 60));
 }
 
+/* ---------- Modo TV (perfil de cliente): percorre as páginas da fila sozinho, rolando devagar, e volta ao início. Feito para TV no escritório do cliente:
+   sem barras nem cursor, tela sempre acesa (Wake Lock) e recarga de tempos em tempos para pegar a base nova (o acesso lembrado reabre e o ?tv=1 religa a TV).
+   Fila, velocidade (px/s) e tempos (s) vêm da base do cliente (cliente.tv). ---------- */
+const TVC = Object.assign({vel: 36, topo: 6, fim: 5, min: 14, max: 240, recarga_h: 3, paginas: ['inicio', 'geral', 'redes-col', 'redes-scan', 'si-inicio', 'mi-inicio', 'ni-inicio']}, CLIENTE.tv || {});
+const TODAS_PGS = () => [...PAGES_SO, ...PAGES_SI, ...PAGES_MI, ...PAGES_NI].map(p => p[0]);
+function filaTV() {
+  const tem = {so: true, si: !!DSI, mi: !!DMI, ni: !!DNI, ex: false};
+  return (TVC.paginas || []).map(x => (Array.isArray(x) ? x : [x, {}])).filter(([pg]) => PG_OK(pg) && TODAS_PGS().includes(pg) && tem[modoDaPagina(pg)] &&
+    (pg !== 'redes-col' || RD) && (pg !== 'redes-scan' || shareUF()));
+}
+function tvTag() {
+  const el = document.getElementById('tvtag'); if (!el) return;
+  const pg = PAGES.find(p => p[0] === S.page), x = validade();
+  el.innerHTML = `<b>${esc(NOME_SITE())}</b><span>${esc(PERNA())} · ${esc(pg ? pg[1] : '')}</span><span>${TV.i + 1} de ${TV.fila.length}</span>` +
+    `<span>${new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</span>${x ? `<span>${esc(x.txt)}</span>` : ''}${TV.pausa ? '<span class="tv-pausa">Pausado</span>' : ''}`;
+}
+function tvZoom() { document.documentElement.style.setProperty('--tvz', Math.min(1.8, Math.max(1, innerWidth / 1320)).toFixed(3)); }
+function tvIr(i) {
+  const n = TV.fila.length; TV.i = ((i % n) + n) % n;
+  const [pg, ui] = TV.fila[TV.i];
+  let ok = true;
+  try {
+    fecharPop();
+    const m = modoDaPagina(pg);
+    if (m !== MODO) trocaModo(m);
+    S.page = pg; S.ui.pag = 0;
+    Object.keys(S.ui).filter(k => /^sel|sel$|todas$/.test(k)).forEach(k => { delete S.ui[k]; });   // nenhuma loja, rede ou lista aberta: a página como ela abre
+    Object.assign(S.ui, ui || {});
+    gravarHash(false); render();
+  } catch (e) { ok = false; console.warn('Modo TV: página com erro, segue para a próxima.', e); }
+  scrollTo({top: 0, behavior: 'instant'});
+  TV.y = 0; TV.fase = ok ? 'topo' : 'fim'; TV.t0 = performance.now(); tvTag();
+}
+function tvProxima() {
+  const n = (TV.i + 1) % TV.fila.length;
+  if (n === 0 && Date.now() - TV.desde > TVC.recarga_h * 36e5) { location.reload(); return; }   // fim da volta e já passou o tempo: recarrega para pegar a base nova
+  tvIr(n);
+}
+function tvQuadro(ts) {
+  if (!TV.on) return;
+  TV.raf = requestAnimationFrame(tvQuadro); TV.ult = performance.now();
+  const dt = TV.tq ? Math.min(0.1, Math.max(0, (ts - TV.tq) / 1000)) : 0; TV.tq = ts;
+  if (TV.pausa) { TV.t0 += dt * 1000; return; }
+  const max = Math.max(0, document.scrollingElement.scrollHeight - innerHeight), t = (ts - TV.t0) / 1000;
+  if (TV.fase === 'topo') { if (t >= TVC.topo) { TV.fase = max < 4 ? 'curta' : 'rolar'; TV.t0 = ts; } }
+  else if (TV.fase === 'rolar') {
+    TV.y = Math.min(max, TV.y + TVC.vel * dt);   // posição guardada em fração de pixel: anda menos de 1 px por quadro sem travar
+    scrollTo({top: TV.y, behavior: 'instant'});
+    if (TV.y >= max - 1 || t > TVC.max) { TV.fase = 'fim'; TV.t0 = ts; }
+  } else if (TV.fase === 'curta') { if (t >= TVC.min) { TV.fase = 'fim'; TV.t0 = ts; } }
+  else if (TV.fase === 'fim' && t >= TVC.fim) tvProxima();
+  const b = document.getElementById('tvbar');
+  if (b) b.style.transform = `scaleX(${TV.fase === 'rolar' ? (max ? TV.y / max : 1) : TV.fase === 'topo' ? 0 : 1})`;
+}
+async function tvAcordar() {   // tela sempre acesa; navegador sem Wake Lock: deixar a TV sem economia de energia nas configurações
+  try { if (TV.on && navigator.wakeLock && document.visibilityState === 'visible') TV.wake = await navigator.wakeLock.request('screen'); } catch (e) { /* sem Wake Lock */ }
+}
+function tvVigia() {   // aba que voltou do segundo plano ou quadro parado: religa a rolagem; atualiza a hora da pílula
+  if (!TV.on) return;
+  if (performance.now() - TV.ult > 3000) { cancelAnimationFrame(TV.raf); TV.tq = 0; TV.raf = requestAnimationFrame(tvQuadro); }
+  tvTag();
+}
+function abrirTV(gesto) {
+  if (TV.on || !CLI) return;
+  fecharPop(); if (APRES) fecharApresentacao();
+  TV.fila = filaTV(); if (!TV.fila.length) return;
+  TV.on = true; TV.desde = Date.now(); TV.pausa = false;
+  document.documentElement.classList.add('tv'); document.body.classList.add('tv'); tvZoom();
+  if (!document.getElementById('tvtag')) document.body.insertAdjacentHTML('beforeend', '<div id="tvtag" aria-live="polite"></div><div id="tvbar"></div><button id="tvsair" type="button">Sair do Modo TV (Esc)</button>');
+  try { const u = new URL(location.href); u.searchParams.set('tv', '1'); history.replaceState(null, '', u); } catch (e) { /* sem histórico */ }
+  if (gesto) { try { const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* sem tela cheia */ } }
+  tvAcordar(); tvIr(0);
+  TV.tq = 0; TV.raf = requestAnimationFrame(tvQuadro); TV.wd = setInterval(tvVigia, 5000);
+}
+function fecharTV() {
+  if (!TV.on) return;
+  TV.on = false; cancelAnimationFrame(TV.raf); clearInterval(TV.wd);
+  try { if (TV.wake) TV.wake.release(); } catch (e) { /* já solto */ } TV.wake = null;
+  document.documentElement.classList.remove('tv'); document.body.classList.remove('tv', 'mexeu');
+  ['tvtag', 'tvbar', 'tvsair'].forEach(i => { const el = document.getElementById(i); if (el) el.remove(); });
+  try { const u = new URL(location.href); u.searchParams.delete('tv'); history.replaceState(null, '', u); } catch (e) { /* sem histórico */ }
+  try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) { /* já saiu */ }
+  render(false);
+}
+let tMexeu = null;
+const tvMexeu = () => { if (!TV.on) return; document.body.classList.add('mexeu'); clearTimeout(tMexeu); tMexeu = setTimeout(() => document.body.classList.remove('mexeu'), 4000); };
+addEventListener('mousemove', tvMexeu); addEventListener('touchstart', tvMexeu, {passive: true});
+document.addEventListener('click', e => { if (TV.on && e.target.closest('#tvsair')) fecharTV(); });
+document.addEventListener('visibilitychange', () => { if (TV.on && document.visibilityState === 'visible') { tvAcordar(); tvVigia(); } });
+addEventListener('resize', () => { if (TV.on) tvZoom(); });
+
 const rod = document.getElementById('rodape');
 function render(topo = true) {
   nav();
@@ -3548,7 +3695,7 @@ function render(topo = true) {
   const lados = [...document.querySelectorAll('#app .shelf, #app .tw')].map(x => x.scrollLeft);
   const app = document.getElementById('app');
   app.innerHTML = paginaHTML();
-  document.title = (S.page === INICIO() ? '' : PAGES.find(p => p[0] === S.page)[1] + ' · ') + 'Governança CTO · ' + PERNA();
+  document.title = (S.page === INICIO() ? '' : PAGES.find(p => p[0] === S.page)[1] + ' · ') + NOME_SITE() + ' · ' + PERNA();
   if (rod) rod.innerHTML = (D.rodape || []).map(t => `<p>${esc(t)}</p>`).join('');
   ['scbusca', 'clbusca'].forEach(idb => {   // busca das redes: redesenha só a tabela
     const inp = document.getElementById(idb); if (!inp) return;
@@ -3594,4 +3741,5 @@ Object.assign(PAGINAS, {'mi-inicio': pgMiInicio, 'mi-dados': pgMiDados, 'mi-dire
 Object.assign(PAGINAS, {'ni-inicio': pgNiInicio, 'ni-categorias': pgNiCategorias, 'ni-segmentos': pgNiSegmentos, 'ni-concorrencia': pgNiConcorrencia, 'ni-canais': pgNiCanais, 'ni-geografia': pgNiGeografia, 'ni-skus': pgNiSkus, 'ni-mes': pgNiMes});
 Object.assign(PAGINAS, {'ex-inicio': pgExInicio, 'ex-dados': pgExDados, 'ex-diretor': pgExDiretor, 'ex-clientes': pgExClientes, 'ex-lojas': pgExLojas, 'ex-executivos': pgExExecutivos, 'ex-skus': pgExSkus});
 lerHash(); filtrar(); gravarHash(); fbar(); render();   // o endereço passa a mostrar só o recorte que foi aplicado
+if (CLI && /[?&]tv=1(&|$)/.test(location.search)) abrirTV(false);   // TV que recarregou (ou link com ?tv=1): volta sozinha ao Modo TV
 })();

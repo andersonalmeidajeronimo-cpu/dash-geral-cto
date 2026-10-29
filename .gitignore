@@ -4,3 +4,5 @@ _artifact/
 *.sh
 senha_sal.txt
 __pycache__/
+data/data_cliente.js
+senha_sal_cliente.txt
